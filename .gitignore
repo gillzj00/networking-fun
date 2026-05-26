@@ -11,6 +11,9 @@ bootstrap-outputs.json
 # Backend config — contains the dev account ID in the bucket name
 backend.hcl
 
+# History-rewrite replacement map — maps real AWS IDs to placeholders
+replacements.txt
+
 # Crash log files
 crash.log
 crash.*.log
