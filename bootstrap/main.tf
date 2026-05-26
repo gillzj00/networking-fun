@@ -1,15 +1,12 @@
-# After first apply, uncomment this block (filling in the account ID) and run:
-#   terraform init -migrate-state
-#
-# terraform {
-#   backend "s3" {
-#     bucket       = "tfstate-networking-fun-<DEV_ACCOUNT_ID>"
-#     key          = "bootstrap/terraform.tfstate"
-#     region       = "us-east-2"
-#     use_lockfile = true
-#     encrypt      = true
-#   }
-# }
+terraform {
+  backend "s3" {
+    bucket       = "tfstate-networking-fun-065882629560"
+    key          = "bootstrap/terraform.tfstate"
+    region       = "us-east-2"
+    use_lockfile = true
+    encrypt      = true
+  }
+}
 
 data "aws_caller_identity" "current" {}
 
