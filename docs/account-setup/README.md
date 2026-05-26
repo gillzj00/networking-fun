@@ -32,8 +32,11 @@ ready to receive the Terraform in [`bootstrap/`](../../bootstrap/).
 
 Tick the checkbox at the start of each phase as you finish it.
 
-> **Pre-public-flip TODO.** This file contains the management account ID. Before flipping
-> the repo public at M1, move this file into a `.gitignore`d path or redact the IDs.
+> **Pre-public-flip TODO.** This file contains the management account ID, the dev
+> account ID, org ID, root ID, and Workloads OU ID. Before flipping the repo public at
+> M1, move this file into a `.gitignore`d path or redact the IDs. The
+> `policies/cloudtrail-bucket-policy.json` template also has the management account ID
+> and org ID baked into resource ARNs — redact alongside.
 
 ---
 
@@ -187,7 +190,8 @@ aws cloudtrail get-trail-status --name org-trail --region us-east-2 \
 
 ## Phase 3 — Create the `networking-fun-dev` member account
 
-- [x] Done (2026-05-25) — account `222222222222` created, moved into Workloads OU. Email verification still TODO.
+- [x] Done (2026-05-25) — account `222222222222` created, moved into Workloads OU.
+- [ ] **YOU still TODO:** click the "verify your account contact" email AWS sent to `zachary.gill+networking-fun-dev@hotmail.com`. Account works without it, but verification is required to close cleanly.
 
 **DECISION:** Creating an account is **slow to fully reverse** (90-day closure delay) and
 starts a billing relationship. Confirm before proceeding.
@@ -239,16 +243,21 @@ later (and is required to close the account cleanly).
 1. Create + attach SCP:
 
    ```bash
-   WORKLOADS_OU_ID=<paste-from-phase-1>
+   WORKLOADS_OU_ID=ou-XXXX-XXXXXXXX
 
    SCP_ID=$(aws organizations create-policy \
      --type SERVICE_CONTROL_POLICY \
      --name workloads-baseline \
-     --description "Region lock, root deny, CloudTrail tamper-proofing" \
+     --description "Region lock, root deny, CloudTrail tamper-proofing, expensive-service deny" \
      --content file://docs/account-setup/policies/scp-workloads-baseline.json \
      --query 'Policy.PolicySummary.Id' --output text)
+   echo "SCP_ID=$SCP_ID"
 
    aws organizations attach-policy --policy-id "$SCP_ID" --target-id "$WORKLOADS_OU_ID"
+
+   # Verify
+   aws organizations list-policies-for-target \
+     --target-id "$WORKLOADS_OU_ID" --filter SERVICE_CONTROL_POLICY --output table
    ```
 
 2. Create + attach tag policy:
@@ -260,9 +269,12 @@ later (and is required to close the account cleanly).
      --description "Enforce Project / Environment / ManagedBy tags" \
      --content file://docs/account-setup/policies/tag-policy.json \
      --query 'Policy.PolicySummary.Id' --output text)
+   echo "TAG_POLICY_ID=$TAG_POLICY_ID"
 
    aws organizations attach-policy --policy-id "$TAG_POLICY_ID" --target-id "$WORKLOADS_OU_ID"
    ```
+
+   Record the returned `SCP_ID` and `TAG_POLICY_ID` in the table at the top of this runbook.
 
 **YOU:** Create the $25/mo budget in the **management account** (consolidated billing).
 Console is faster than CLI for this one.
@@ -271,7 +283,7 @@ Console is faster than CLI for this one.
    - Template: "Monthly cost budget"
    - Name: `networking-fun-dev-25usd`
    - Amount: `25` USD
-   - Scope: Filter by `Linked Account = <DEV_ACCOUNT_ID>`
+   - Scope: Filter by `Linked Account = 222222222222`
    - Alerts: 50%, 80%, 100% (actual) and 100% (forecasted) → notify `zachary.gill@hotmail.com`
 
 **Verify guardrails work:** After Phase 6 (when you have a profile for the dev account),
@@ -301,7 +313,7 @@ USER_ID=$(aws identitystore list-users \
   --filters "AttributePath=UserName,AttributeValue=<your-sso-username>" \
   --query 'Users[0].UserId' --output text)
 
-DEV_ACCOUNT_ID=<from-phase-3>
+DEV_ACCOUNT_ID=222222222222
 
 # Admin permission set (4h sessions per project TTL)
 ADMIN_PS_ARN=$(aws sso-admin create-permission-set \
@@ -365,13 +377,13 @@ aws identitystore list-users --identity-store-id "$IDENTITY_STORE_ID" --region u
 ```ini
 [profile networking-fun-dev]
 sso_session    = zach-sso
-sso_account_id = <DEV_ACCOUNT_ID>
+sso_account_id = 222222222222
 sso_role_name  = NetworkingFunDevAdmin
 region         = us-east-2
 
 [profile networking-fun-dev-ro]
 sso_session    = zach-sso
-sso_account_id = <DEV_ACCOUNT_ID>
+sso_account_id = 222222222222
 sso_role_name  = NetworkingFunDevReadOnly
 region         = us-east-2
 ```
@@ -386,8 +398,8 @@ aws sso login --profile networking-fun-dev
 
 ```bash
 aws sts get-caller-identity --profile networking-fun-dev
-# Account: <DEV_ACCOUNT_ID>
-# Arn:     arn:aws:sts::<DEV_ACCOUNT_ID>:assumed-role/AWSReservedSSO_NetworkingFunDevAdmin_*/<your-sso-user>
+# Account: 222222222222
+# Arn:     arn:aws:sts::222222222222:assumed-role/AWSReservedSSO_NetworkingFunDevAdmin_*/<your-sso-user>
 ```
 
 ---
@@ -413,6 +425,9 @@ terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
+Then update the `backend "s3"` block at the top of `bootstrap/main.tf` to use account
+`222222222222` (the dev account) before running `terraform init -migrate-state`.
+
 Capture outputs:
 
 ```bash
@@ -423,8 +438,8 @@ terraform output -json > ../bootstrap-outputs.json
 **Migrate state to S3** (one-time, after first apply):
 
 ```bash
-# Uncomment the `backend "s3"` block at the top of bootstrap/main.tf,
-# replacing <DEV_ACCOUNT_ID> with the real value.
+# Uncomment the `backend "s3"` block at the top of bootstrap/main.tf
+# (bucket name will be tfstate-networking-fun-222222222222).
 terraform init -migrate-state
 # Confirm "yes" when prompted. Local state file gets pushed into S3.
 ```
@@ -462,7 +477,7 @@ aws iam get-role --role-name gha-terraform \
 ```
 
 Then in a throwaway PR, add a workflow that assumes the OIDC role and runs
-`aws sts get-caller-identity`. If it returns `arn:aws:sts::<DEV_ACCOUNT_ID>:assumed-role/gha-terraform/...`
+`aws sts get-caller-identity`. If it returns `arn:aws:sts::222222222222:assumed-role/gha-terraform/...`
 you're done.
 
 ---
