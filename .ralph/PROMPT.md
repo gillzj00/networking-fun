@@ -6,12 +6,24 @@ loop will re-invoke you for the next one — do not try to do more than one.
 ## 1. Pick an issue
 
 - `gh issue list --state open --json number,title,labels,assignees --limit 30`
-- Skip: issues already assigned, or with `blocked` / `wip` / `needs-triage` / `hitl`
-  labels, or with an open PR that references them (`gh pr list --search "linked:issue-N"`).
-  `hitl` means "human-in-the-loop required" — e.g. Loom recordings, decisions you can't
-  make from a fresh context. Surface and exit if there's nothing else.
+- Evaluate each issue **independently**. Skip an issue only if one of these is
+  true *of that issue itself*:
+  - It is already assigned to someone.
+  - It has a `blocked` / `wip` / `needs-triage` / `hitl` label.
+  - It has its own open PR (a PR whose body contains `Closes #<this-issue-N>`
+    or `Fixes #<this-issue-N>`). Check with:
+    `gh issue view <N> --json closedByPullRequestsReferences --jq '[.closedByPullRequestsReferences[] | select(.state=="OPEN")] | length'`
+    — a result > 0 means skip *this* issue.
+- An open PR that closes a *different* issue does NOT block this one. Do not
+  apply transitive "the team is busy with PR #X" reasoning. Other open PRs
+  are irrelevant to your eligibility check.
+- `hitl` means "human-in-the-loop required" — e.g. Loom recordings, decisions
+  you can't make from a fresh context.
 - Prefer issues labelled `ready`. If none, fall back to the lowest open number.
-- If nothing is eligible, print "no work" and exit 0.
+- If you are about to print "no work", first list every open issue and the
+  *specific* reason it's ineligible (one of the bullet criteria above). If you
+  cannot name a specific reason for each, you have an eligible issue — pick it.
+- Only if every open issue has a concrete ineligibility reason, print "no work" and exit 0.
 
 ## 2. Branch
 
