@@ -1,0 +1,103 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyLeavingOrg",
+      "Effect": "Deny",
+      "Action": "organizations:LeaveOrganization",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyDisablingCloudTrail",
+      "Effect": "Deny",
+      "Action": [
+        "cloudtrail:StopLogging",
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:PutEventSelectors",
+        "cloudtrail:UpdateTrail"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyRootAccountUsage",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:root"
+        }
+      }
+    },
+    {
+      "Sid": "DenyDisablingGuardDutyOrSecurityHub",
+      "Effect": "Deny",
+      "Action": [
+        "guardduty:DeleteDetector",
+        "guardduty:DisassociateFromMasterAccount",
+        "guardduty:StopMonitoringMembers",
+        "securityhub:DisableSecurityHub",
+        "securityhub:DisassociateFromMasterAccount"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyExpensiveServices",
+      "Effect": "Deny",
+      "Action": [
+        "eks:CreateCluster",
+        "rds:CreateDBInstance",
+        "rds:CreateDBCluster",
+        "elasticache:CreateCacheCluster",
+        "redshift:CreateCluster",
+        "opensearch:CreateDomain",
+        "es:CreateElasticsearchDomain",
+        "sagemaker:CreateNotebookInstance",
+        "sagemaker:CreateEndpoint",
+        "transfer:CreateServer",
+        "directconnect:CreateConnection"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RegionLockToUsEast2",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:*",
+        "sts:*",
+        "organizations:*",
+        "support:*",
+        "cloudfront:*",
+        "route53:*",
+        "route53domains:*",
+        "waf:*",
+        "wafv2:*",
+        "shield:*",
+        "globalaccelerator:*",
+        "tag:*",
+        "account:*",
+        "ce:*",
+        "cur:*",
+        "budgets:*",
+        "health:*",
+        "trustedadvisor:*",
+        "savingsplans:*",
+        "kms:CreateKey",
+        "kms:CreateAlias",
+        "kms:DescribeKey",
+        "kms:ListAliases",
+        "acm:*",
+        "artifact:*",
+        "billing:*",
+        "consoleapp:*",
+        "pricing:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": ["us-east-2"]
+        }
+      }
+    }
+  ]
+}
