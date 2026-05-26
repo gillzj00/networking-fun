@@ -12,6 +12,8 @@ terraform {
 # be replaced or removed once real platform resources (janitor Lambda, ACM,
 # Route53 zone, Budgets) land in later slices.
 resource "aws_cloudwatch_log_group" "platform_demo" {
+  #checkov:skip=CKV_AWS_158:Demo placeholder; no KMS key warranted for 1-day-retention loop-proof.
+  #checkov:skip=CKV_AWS_338:1-day retention is intentional for this disposable demo log group.
   name              = "/networking-fun/platform/demo"
   retention_in_days = var.demo_log_group_retention_days
 }
