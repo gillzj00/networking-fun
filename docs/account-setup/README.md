@@ -32,11 +32,16 @@ ready to receive the Terraform in [`bootstrap/`](../../bootstrap/).
 
 Tick the checkbox at the start of each phase as you finish it.
 
-> **Pre-public-flip TODO.** This file contains the management account ID, the dev
-> account ID, org ID, root ID, and Workloads OU ID. Before flipping the repo public at
-> M1, move this file into a `.gitignore`d path or redact the IDs. The
-> `policies/cloudtrail-bucket-policy.json` template also has the management account ID
-> and org ID baked into resource ARNs — redact alongside.
+> **Pre-public-flip TODO.** Three tracked files leak identifiers that must be redacted
+> before flipping the repo public at M1:
+>
+> - This file — management account ID, dev account ID, org ID, root ID, Workloads OU ID.
+>   Either move into a `.gitignore`d path or redact the IDs.
+> - `policies/cloudtrail-bucket-policy.json` — management account ID and org ID baked
+>   into resource ARNs.
+> - `bootstrap/main.tf` — historically pinned the dev account ID in the backend block.
+>   F-12 cleanup migrated that to `-backend-config` at init time; the canonical command
+>   is now `terraform init -backend-config=backend.hcl` with `backend.hcl` gitignored.
 
 ---
 
@@ -236,7 +241,9 @@ later (and is required to close the account cleanly).
 
 ## Phase 4 — Apply guardrails (SCPs + tag policy + budget)
 
-- [ ] Done
+- [x] SCP `workloads-baseline` (`p-XXXXXXXX`) attached to Workloads OU (2026-05-25)
+- [x] Tag policy `require-standard-tags` (`p-XXXXXXXXXX`) attached to Workloads OU (2026-05-25)
+- [x] $25/mo budget `networking-fun-dev-25usd` created via CLI in management account (2026-05-25)
 
 **CLAUDE:** Attach the baseline SCP and tag policy to the Workloads OU.
 
@@ -276,15 +283,54 @@ later (and is required to close the account cleanly).
 
    Record the returned `SCP_ID` and `TAG_POLICY_ID` in the table at the top of this runbook.
 
-**YOU:** Create the $25/mo budget in the **management account** (consolidated billing).
-Console is faster than CLI for this one.
+**CLAUDE:** Create the $25/mo budget in the **management account** (consolidated billing)
+scoped to the dev account. The budget JSON and notifications JSON match the same spec as
+the console flow (Monthly cost / $25 / LinkedAccount filter / 50-80-100 ACTUAL + 100
+FORECASTED → email).
 
-1. Billing & Cost Management → Budgets → Create budget
-   - Template: "Monthly cost budget"
-   - Name: `networking-fun-dev-25usd`
-   - Amount: `25` USD
-   - Scope: Filter by `Linked Account = 222222222222`
-   - Alerts: 50%, 80%, 100% (actual) and 100% (forecasted) → notify `5639243+gillzj00@users.noreply.github.com`
+```bash
+cat > /tmp/budget.json <<'JSON'
+{
+  "BudgetName": "networking-fun-dev-25usd",
+  "BudgetLimit": { "Amount": "25", "Unit": "USD" },
+  "TimeUnit": "MONTHLY",
+  "BudgetType": "COST",
+  "CostFilters": { "LinkedAccount": ["222222222222"] },
+  "CostTypes": {
+    "IncludeTax": true, "IncludeSubscription": true, "UseBlended": false,
+    "IncludeRefund": false, "IncludeCredit": false, "IncludeUpfront": true,
+    "IncludeRecurring": true, "IncludeOtherSubscription": true,
+    "IncludeSupport": true, "IncludeDiscount": true, "UseAmortized": false
+  }
+}
+JSON
+
+cat > /tmp/notifications.json <<'JSON'
+[
+  { "Notification": {"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":50,"ThresholdType":"PERCENTAGE"},
+    "Subscribers": [{"SubscriptionType":"EMAIL","Address":"5639243+gillzj00@users.noreply.github.com"}] },
+  { "Notification": {"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":80,"ThresholdType":"PERCENTAGE"},
+    "Subscribers": [{"SubscriptionType":"EMAIL","Address":"5639243+gillzj00@users.noreply.github.com"}] },
+  { "Notification": {"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},
+    "Subscribers": [{"SubscriptionType":"EMAIL","Address":"5639243+gillzj00@users.noreply.github.com"}] },
+  { "Notification": {"NotificationType":"FORECASTED","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},
+    "Subscribers": [{"SubscriptionType":"EMAIL","Address":"5639243+gillzj00@users.noreply.github.com"}] }
+]
+JSON
+
+# Run from the management account profile (budgets live with consolidated billing)
+aws budgets create-budget \
+  --account-id 111111111111 \
+  --budget file:///tmp/budget.json \
+  --notifications-with-subscribers file:///tmp/notifications.json \
+  --profile default
+
+# Verify
+aws budgets describe-budget --account-id 111111111111 \
+  --budget-name networking-fun-dev-25usd --profile default
+aws budgets describe-notifications-for-budget --account-id 111111111111 \
+  --budget-name networking-fun-dev-25usd --profile default
+```
 
 **Verify guardrails work:** After Phase 6 (when you have a profile for the dev account),
 this should be denied by the region-lock SCP:
@@ -298,7 +344,13 @@ aws ec2 describe-instances --region us-west-2 --profile networking-fun-dev
 
 ## Phase 5 — Identity Center permission sets + assignment
 
-- [ ] Done
+- [x] Done (2026-05-25)
+- SSO instance: `arn:aws:sso:::instance/ssoins-XXXXXXXXXXXXXXXX`
+- Identity Store: `d-XXXXXXXXXX`
+- User: `zach-sso` (`00000000-0000-0000-0000-000000000000`)
+- `NetworkingFunDevAdmin`: `arn:aws:sso:::permissionSet/ssoins-XXXXXXXXXXXXXXXX/ps-XXXXXXXXXXXXXXXX` (AdministratorAccess attached)
+- `NetworkingFunDevReadOnly`: `arn:aws:sso:::permissionSet/ssoins-XXXXXXXXXXXXXXXX/ps-XXXXXXXXXXXXXXXX` (ReadOnlyAccess attached)
+- Both assigned to user on dev account `222222222222`
 
 **CLAUDE:** Two permission sets, both assigned to your user against the new account.
 
@@ -319,7 +371,7 @@ DEV_ACCOUNT_ID=222222222222
 ADMIN_PS_ARN=$(aws sso-admin create-permission-set \
   --instance-arn "$SSO_INSTANCE_ARN" \
   --name NetworkingFunDevAdmin \
-  --description "Admin access to networking-fun-dev — 4h sessions" \
+  --description "Admin access to networking-fun-dev - 4h sessions" \
   --session-duration PT4H \
   --region us-west-2 \
   --query 'PermissionSet.PermissionSetArn' --output text)
@@ -369,7 +421,7 @@ aws identitystore list-users --identity-store-id "$IDENTITY_STORE_ID" --region u
 
 ## Phase 6 — Local AWS CLI profile
 
-- [ ] Done
+- [x] Done (2026-05-25) — profiles `networking-fun-dev` and `networking-fun-dev-ro` added to `~/.aws/config`; existing `zach-sso` SSO session covered both; region-lock test confirmed (us-west-2 deny via SCP `p-XXXXXXXX`, us-east-2 success).
 
 **CLAUDE:** Append two new profiles to `~/.aws/config` (reusing the existing
 `[sso-session zach-sso]` block so the login flow is shared):
@@ -406,7 +458,12 @@ aws sts get-caller-identity --profile networking-fun-dev
 
 ## Phase 7 — Apply Terraform bootstrap in `networking-fun-dev`
 
-- [ ] Done
+- [x] Done (2026-05-25) — 8 resources created, state migrated to S3.
+- State bucket: `tfstate-networking-fun-222222222222` (versioned, SSE-S3, PAB on, 90d non-current expiration)
+- OIDC provider: `arn:aws:iam::222222222222:oidc-provider/token.actions.githubusercontent.com`
+- GHA role: `arn:aws:iam::222222222222:role/gha-terraform` (trusts `repo:gillzj00/networking-fun:*`, 4h sessions, AdministratorAccess)
+- Outputs saved locally to `bootstrap-outputs.json` (gitignored).
+- Backend block in `bootstrap/main.tf` now uncommented with the real bucket; subsequent runs use S3 directly.
 
 **DECISION:** First `terraform apply` against the dev account. Creates: S3 state bucket,
 GitHub OIDC provider, IAM role for GitHub Actions. All cheap (<$1/mo). Confirm before
@@ -419,14 +476,19 @@ cd bootstrap
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars to confirm owner_email and github_repo
 
+cp backend.hcl.example backend.hcl
+# Edit backend.hcl: replace <DEV_ACCOUNT_ID> with the real ID.
+# backend.hcl is gitignored.
+
 export AWS_PROFILE=networking-fun-dev
-terraform init
+terraform init -backend-config=backend.hcl
 terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-Then update the `backend "s3"` block at the top of `bootstrap/main.tf` to use account
-`222222222222` (the dev account) before running `terraform init -migrate-state`.
+The backend config is supplied at init time so the account ID stays out of version
+control (F-12). Subsequent `terraform init` calls in the same working directory pick up
+the saved `.terraform/terraform.tfstate` automatically.
 
 Capture outputs:
 
@@ -435,20 +497,17 @@ terraform output -json > ../bootstrap-outputs.json
 # Keep this locally; gha_role_arn will go into GitHub Actions secrets / workflow inputs.
 ```
 
-**Migrate state to S3** (one-time, after first apply):
-
-```bash
-# Uncomment the `backend "s3"` block at the top of bootstrap/main.tf
-# (bucket name will be tfstate-networking-fun-222222222222).
-terraform init -migrate-state
-# Confirm "yes" when prompted. Local state file gets pushed into S3.
-```
+For a from-scratch bootstrap (chicken-and-egg: state bucket doesn't exist yet), comment
+out the `backend "s3" {}` block in `main.tf`, apply once with local state, then
+uncomment and run `terraform init -backend-config=backend.hcl -migrate-state` to push
+local state into the freshly-created bucket. After that, subsequent runs just need
+`terraform init -backend-config=backend.hcl`.
 
 ---
 
 ## Phase 8 — End-to-end verification
 
-- [ ] Done
+- [x] Done (2026-05-25) — all checks green: SSO works, SCP region lock active (us-west-2 deny on `ec2:DescribeInstances`), state bucket PAB on, SSE-S3 + versioning on, OIDC provider exists, GHA role exists with `AdministratorAccess` and correct trust policy.
 
 Confirm everything fits together:
 

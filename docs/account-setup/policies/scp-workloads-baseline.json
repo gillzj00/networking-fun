@@ -14,7 +14,14 @@
         "cloudtrail:StopLogging",
         "cloudtrail:DeleteTrail",
         "cloudtrail:PutEventSelectors",
-        "cloudtrail:UpdateTrail"
+        "cloudtrail:UpdateTrail",
+        "cloudtrail:DeleteEventDataStore",
+        "cloudtrail:UpdateEventDataStore",
+        "cloudtrail:DeleteChannel",
+        "cloudtrail:UpdateChannel",
+        "cloudtrail:DeleteResourcePolicy",
+        "cloudtrail:PutResourcePolicy",
+        "cloudtrail:DisableFederation"
       ],
       "Resource": "*"
     },
