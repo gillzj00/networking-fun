@@ -1,3 +1,6 @@
 owner_email                   = "zachary.gill@hotmail.com"
 region                        = "us-east-2"
 demo_log_group_retention_days = 1
+labs_domain                   = "labs.gillzhub.com"
+# Flip to true only after the parent-zone NS delegation is in place. See platform/README.md.
+enable_acm_validation = false
