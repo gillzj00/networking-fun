@@ -6,8 +6,10 @@ loop will re-invoke you for the next one — do not try to do more than one.
 ## 1. Pick an issue
 
 - `gh issue list --state open --json number,title,labels,assignees --limit 30`
-- Skip: issues already assigned, or with `blocked` / `wip` / `needs-triage` labels,
-  or with an open PR that references them (`gh pr list --search "linked:issue-N"`).
+- Skip: issues already assigned, or with `blocked` / `wip` / `needs-triage` / `hitl`
+  labels, or with an open PR that references them (`gh pr list --search "linked:issue-N"`).
+  `hitl` means "human-in-the-loop required" — e.g. Loom recordings, decisions you can't
+  make from a fresh context. Surface and exit if there's nothing else.
 - Prefer issues labelled `ready`. If none, fall back to the lowest open number.
 - If nothing is eligible, print "no work" and exit 0.
 
