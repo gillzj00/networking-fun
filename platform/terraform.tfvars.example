@@ -1,3 +1,7 @@
 owner_email                   = "zachary.gill@hotmail.com"
 region                        = "us-east-2"
 demo_log_group_retention_days = 1
+janitor_schedule_expression   = "rate(15 minutes)"
+janitor_log_retention_days    = 7
+monthly_budget_usd            = "25"
+terratest_budget_usd          = "5"
