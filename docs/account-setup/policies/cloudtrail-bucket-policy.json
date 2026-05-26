@@ -36,6 +36,21 @@
           "aws:SourceArn": "arn:aws:cloudtrail:us-east-2:174230265051:trail/org-trail"
         }
       }
+    },
+    {
+      "Sid": "DenyInsecureTransport",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::aws-cloudtrail-org-174230265051-us-east-2",
+        "arn:aws:s3:::aws-cloudtrail-org-174230265051-us-east-2/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
     }
   ]
 }
