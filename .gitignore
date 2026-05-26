@@ -42,6 +42,9 @@ override.tf.json
 tfplan
 *.tfplan
 
+# Lambda deployment artifacts produced by archive_file data sources
+platform/janitor.zip
+
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
