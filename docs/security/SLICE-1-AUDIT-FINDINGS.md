@@ -6,24 +6,30 @@
 
 Findings are grouped by severity. Each is identified `F-NN`. Tracked in GitHub via the `security` label.
 
+## Current status (as of 2026-05-26)
+
+**10 of 16 resolved.** The 6 still-open findings are tracked in **GitHub issue #17** (baseline hardening, M2 cycle).
+
 | ID | Severity | Title | Status |
 |---|---|---|---|
-| F-01 | HIGH | `gha-terraform` OIDC trust wildcard | Tracked in #M1-blocker issue |
-| F-02 | HIGH | CloudTrail bucket allows non-TLS access | Tracked in #M1-blocker issue |
-| F-03 | MEDIUM | CloudTrail bucket has no Object Lock / MFA-delete | Tracked in #baseline issue |
-| F-04 | MEDIUM | `OrganizationAccountAccessRole` trust lacks MFA | Tracked in #baseline issue |
-| F-05 | MEDIUM | Default VPC + IGW + public subnets intact in dev | Tracked in #baseline issue |
-| F-06 | MEDIUM | EBS encryption-by-default off in dev | Fixed in audit (see below) |
-| F-07 | MEDIUM | No IAM Access Analyzer in either account | Fixed in audit (see below) |
-| F-08 | MEDIUM | tfstate bucket has no bucket policy | Tracked in #M1-blocker issue |
-| F-09 | MEDIUM | SCP `DenyDisablingCloudTrail` doesn't cover Lake | Tracked in #baseline issue |
-| F-10 | LOW | No IAM password policy in either account | Fixed in audit (see below) |
-| F-11 | LOW | CloudTrail bucket has no lifecycle policy | Tracked in #baseline issue |
-| F-12 | LOW | Hardcoded dev account ID in `bootstrap/main.tf` | Tracked in #M1-blocker issue |
-| F-13 | LOW | Tag policy `enforced_for` misses networking resources | Tracked in #baseline issue |
-| F-14 | LOW | Budget alarms are single-channel email | Tracked in #baseline issue |
-| F-15 | LOW | IDC permission sets have no permissions boundary | Tracked in #baseline issue |
-| F-16 | LOW | OIDC provider thumbprint is the stale GitHub one | Tracked in #M1-blocker issue |
+| F-01 | HIGH | `gha-terraform` OIDC trust wildcard | ✅ RESOLVED — PR #18, applied to live IAM 2026-05-26 |
+| F-02 | HIGH | CloudTrail bucket allows non-TLS access | ✅ RESOLVED — PR #19, live policy 2026-05-25 |
+| F-03 | MEDIUM | CloudTrail bucket has no Object Lock / MFA-delete | 🔲 OPEN — #17 |
+| F-04 | MEDIUM | `OrganizationAccountAccessRole` trust lacks MFA | 🔲 OPEN — #17 |
+| F-05 | MEDIUM | Default VPC + IGW + public subnets intact in dev | 🔲 OPEN — #17 |
+| F-06 | MEDIUM | EBS encryption-by-default off in dev | ✅ Fixed in audit (see below) |
+| F-07 | MEDIUM | No IAM Access Analyzer in either account | ✅ Fixed in audit (see below) |
+| F-08 | MEDIUM | tfstate bucket has no bucket policy | ✅ RESOLVED — PR #19, applied 2026-05-26 |
+| F-09 | MEDIUM | SCP `DenyDisablingCloudTrail` doesn't cover Lake | ✅ RESOLVED — PR #20, live SCP 2026-05-25 |
+| F-10 | LOW | No IAM password policy in either account | ✅ Fixed in audit (see below) |
+| F-11 | LOW | CloudTrail bucket has no lifecycle policy | 🔲 OPEN — #17 |
+| F-12 | LOW | Hardcoded dev account ID in `bootstrap/main.tf` | ✅ RESOLVED — PR #21 |
+| F-13 | LOW | Tag policy `enforced_for` misses networking resources | ✅ RESOLVED — PR #20, live policy 2026-05-25 |
+| F-14 | LOW | Budget alarms are single-channel email | 🔲 OPEN — #17 |
+| F-15 | LOW | IDC permission sets have no permissions boundary | 🔲 OPEN — #17 |
+| F-16 | LOW | OIDC provider thumbprint is the stale GitHub one | ✅ RESOLVED — PR #21, applied 2026-05-26 |
+
+**Open work tracker:** GitHub issue #17. **History below is preserved for context** — the per-finding sections retain the original "what / why / fix" narrative even for resolved items.
 
 ---
 
@@ -32,7 +38,7 @@ Findings are grouped by severity. Each is identified `F-NN`. Tracked in GitHub v
 ### F-01 [HIGH] `gha-terraform` OIDC trust matches any ref, including PR refs from forks
 **Where:** dev `222222222222`, role `gha-terraform`. Trust `Condition.StringLike.token.actions.githubusercontent.com:sub = "repo:gillzj00/networking-fun:*"`.
 **What:** The `*` wildcard on the `sub` claim matches every GitHub-issued OIDC token for this repo — `ref:refs/heads/*`, `pull_request`, `environment:*`, `job_workflow_ref:*`. Combined with `AdministratorAccess` (accepted v1.1 risk), any workflow that runs from a PR can assume Admin in the dev account.
-**Why it matters:** Public flip at M1 = 2026-06-08. Once public, a fork PR-author can propose a workflow change (`pull_request_target` is the classic vector) and pivot to full account control.
+**Why it matters:** Public flip was scheduled for M1 (2026-06-08, actually shipped 2026-05-26). Once public, a fork PR-author can propose a workflow change (`pull_request_target` is the classic vector) and pivot to full account control.
 **Fix:** Tighten the `sub` condition in `bootstrap/main.tf:90-93`:
 ```hcl
 condition {

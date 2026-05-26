@@ -1,8 +1,16 @@
 # networking-fun — AWS account setup runbook
 
-**Purpose.** Convert the existing single management account (`111111111111`) into an
-enterprise-shaped AWS Organization with a dedicated `networking-fun-dev` member account,
-ready to receive the Terraform in [`bootstrap/`](../../bootstrap/).
+**Purpose.** Convert the existing single management account into an enterprise-shaped AWS
+Organization with a dedicated `networking-fun-dev` member account, ready to receive the
+Terraform in [`bootstrap/`](../../bootstrap/).
+
+**Status:** Phases 0–8 shipped 2026-05-25 (Slice 1, PR #15). Audit-driven remediations
+shipped 2026-05-26 (F-01/F-02/F-08/F-12/F-16 — see [`docs/security/`](../security/)).
+
+> **Public-repo note.** All account / org / OU / SCP / SSO / permission-set IDs in this
+> file are placeholders (`111111111111`, `o-XXXXXXXXXX`, etc.). The real IDs were
+> redacted from git history via `git-filter-repo` before the 2026-05-26 public flip. If
+> you're forking this runbook, substitute your own.
 
 **Specific to this setup** (not generic — all values are wired in):
 
@@ -31,17 +39,6 @@ ready to receive the Terraform in [`bootstrap/`](../../bootstrap/).
 - **DECISION** — Claude pauses and waits for your explicit OK because the action is hard to reverse or has billing impact
 
 Tick the checkbox at the start of each phase as you finish it.
-
-> **Pre-public-flip TODO.** Three tracked files leak identifiers that must be redacted
-> before flipping the repo public at M1:
->
-> - This file — management account ID, dev account ID, org ID, root ID, Workloads OU ID.
->   Either move into a `.gitignore`d path or redact the IDs.
-> - `policies/cloudtrail-bucket-policy.json` — management account ID and org ID baked
->   into resource ARNs.
-> - `bootstrap/main.tf` — historically pinned the dev account ID in the backend block.
->   F-12 cleanup migrated that to `-backend-config` at init time; the canonical command
->   is now `terraform init -backend-config=backend.hcl` with `backend.hcl` gitignored.
 
 ---
 
@@ -461,7 +458,7 @@ aws sts get-caller-identity --profile networking-fun-dev
 - [x] Done (2026-05-25) — 8 resources created, state migrated to S3.
 - State bucket: `tfstate-networking-fun-222222222222` (versioned, SSE-S3, PAB on, 90d non-current expiration)
 - OIDC provider: `arn:aws:iam::222222222222:oidc-provider/token.actions.githubusercontent.com`
-- GHA role: `arn:aws:iam::222222222222:role/gha-terraform` (trusts `repo:gillzj00/networking-fun:*`, 4h sessions, AdministratorAccess)
+- GHA role: `arn:aws:iam::222222222222:role/gha-terraform` (4h sessions, AdministratorAccess). Trust originally scoped to `repo:gillzj00/networking-fun:*`; tightened 2026-05-26 to `ref:refs/heads/main` + `environment:production` (F-01 remediation).
 - Outputs saved locally to `bootstrap-outputs.json` (gitignored).
 - Backend block in `bootstrap/main.tf` now uncommented with the real bucket; subsequent runs use S3 directly.
 
