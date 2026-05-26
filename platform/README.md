@@ -1,10 +1,17 @@
 # platform/
 
 Long-lived, account-wide resources for `networking-fun`: anything the labs
-consume but that itself outlives any individual PR. Today this is just a
-trivial CloudWatch log group used to prove the GitOps loop. Future slices
-add the Janitor Lambda, Route53 delegated zone, wildcard ACM cert, Budgets
-alarm, and the lab module registry (see [PRD §6](../PRD.md#6-architecture--three-layers)).
+consume but that itself outlives any individual PR. Today this layer owns:
+
+- A trivial CloudWatch log group (`/networking-fun/platform/demo`) — only
+  there to prove the GitOps loop end-to-end; will be removed once real
+  platform resources have displaced it.
+- A delegated Route53 zone for `labs.gillzhub.com` — vanity URLs for the
+  ephemeral lab envs (`pr-<N>.labs.gillzhub.com`).
+- A wildcard ACM cert for `*.labs.gillzhub.com` (us-east-2, DNS-validated).
+
+Future slices add the Janitor Lambda, Budgets alarm, and the lab module
+registry (see [PRD §6](../PRD.md#6-architecture--three-layers)).
 
 ## Trigger model
 
@@ -58,6 +65,37 @@ These resources can only be changed by re-running `bootstrap/` manually
 from a privileged IDC session. Catching the attempt in CI prevents a
 platform-layer PR from accidentally hosing the credential surface that CI
 itself depends on.
+
+## DNS delegation and wildcard ACM
+
+The lab vanity-URL pattern is `pr-<N>.labs.gillzhub.com`. To make that
+resolve, `labs.gillzhub.com` is delegated from the parent `gillzhub.com`
+zone (in the management account) to a child Route53 zone in this dev
+sub-account, and a wildcard ACM cert is issued for `*.labs.gillzhub.com`.
+
+The child zone and cert are managed here in `platform/`. The parent-zone
+NS record is a **one-time manual step** in the management account — see
+the [parent-zone NS delegation
+runbook](../docs/account-setup/README.md#phase-9--delegate-labsgillzhubcom-to-the-dev-sub-account).
+Cross-account Terraform for that one record was judged too much trust
+surface for a single 4-line resource; see the rationale in the runbook.
+
+### Order of operations
+
+1. Merge the platform-layer change that introduces the zone + cert.
+   Apply runs in the dev sub-account; the cert is created in
+   `PENDING_VALIDATION` because the validation CNAME can't yet resolve
+   publicly.
+2. Read the `labs_zone_name_servers` Terraform output.
+3. Run the parent-zone runbook (one-time, manual) to add the NS record in
+   `gillzhub.com`. Verify with `dig labs.gillzhub.com NS`.
+4. Flip `enable_acm_validation = true` in `terraform.tfvars` and open a
+   follow-up PR. The apply will block on `aws_acm_certificate_validation`
+   until ACM sees the validation record, then the cert reaches `ISSUED`.
+
+Until step 3 is done, the cert is harmless dead weight in
+`PENDING_VALIDATION`; nothing else in `platform/` or `labs/` depends on
+it being issued yet.
 
 ## Escape hatch
 
