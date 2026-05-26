@@ -238,7 +238,7 @@ later (and is required to close the account cleanly).
 
 - [x] SCP `workloads-baseline` (`p-XXXXXXXX`) attached to Workloads OU (2026-05-25)
 - [x] Tag policy `require-standard-tags` (`p-XXXXXXXXXX`) attached to Workloads OU (2026-05-25)
-- [ ] **YOU TODO:** create $25/mo budget in the management account console (steps below)
+- [x] $25/mo budget `networking-fun-dev-25usd` created via CLI in management account (2026-05-25)
 
 **CLAUDE:** Attach the baseline SCP and tag policy to the Workloads OU.
 
@@ -278,15 +278,54 @@ later (and is required to close the account cleanly).
 
    Record the returned `SCP_ID` and `TAG_POLICY_ID` in the table at the top of this runbook.
 
-**YOU:** Create the $25/mo budget in the **management account** (consolidated billing).
-Console is faster than CLI for this one.
+**CLAUDE:** Create the $25/mo budget in the **management account** (consolidated billing)
+scoped to the dev account. The budget JSON and notifications JSON match the same spec as
+the console flow (Monthly cost / $25 / LinkedAccount filter / 50-80-100 ACTUAL + 100
+FORECASTED → email).
 
-1. Billing & Cost Management → Budgets → Create budget
-   - Template: "Monthly cost budget"
-   - Name: `networking-fun-dev-25usd`
-   - Amount: `25` USD
-   - Scope: Filter by `Linked Account = 222222222222`
-   - Alerts: 50%, 80%, 100% (actual) and 100% (forecasted) → notify `zachary.gill@hotmail.com`
+```bash
+cat > /tmp/budget.json <<'JSON'
+{
+  "BudgetName": "networking-fun-dev-25usd",
+  "BudgetLimit": { "Amount": "25", "Unit": "USD" },
+  "TimeUnit": "MONTHLY",
+  "BudgetType": "COST",
+  "CostFilters": { "LinkedAccount": ["222222222222"] },
+  "CostTypes": {
+    "IncludeTax": true, "IncludeSubscription": true, "UseBlended": false,
+    "IncludeRefund": false, "IncludeCredit": false, "IncludeUpfront": true,
+    "IncludeRecurring": true, "IncludeOtherSubscription": true,
+    "IncludeSupport": true, "IncludeDiscount": true, "UseAmortized": false
+  }
+}
+JSON
+
+cat > /tmp/notifications.json <<'JSON'
+[
+  { "Notification": {"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":50,"ThresholdType":"PERCENTAGE"},
+    "Subscribers": [{"SubscriptionType":"EMAIL","Address":"zachary.gill@hotmail.com"}] },
+  { "Notification": {"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":80,"ThresholdType":"PERCENTAGE"},
+    "Subscribers": [{"SubscriptionType":"EMAIL","Address":"zachary.gill@hotmail.com"}] },
+  { "Notification": {"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},
+    "Subscribers": [{"SubscriptionType":"EMAIL","Address":"zachary.gill@hotmail.com"}] },
+  { "Notification": {"NotificationType":"FORECASTED","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},
+    "Subscribers": [{"SubscriptionType":"EMAIL","Address":"zachary.gill@hotmail.com"}] }
+]
+JSON
+
+# Run from the management account profile (budgets live with consolidated billing)
+aws budgets create-budget \
+  --account-id 111111111111 \
+  --budget file:///tmp/budget.json \
+  --notifications-with-subscribers file:///tmp/notifications.json \
+  --profile default
+
+# Verify
+aws budgets describe-budget --account-id 111111111111 \
+  --budget-name networking-fun-dev-25usd --profile default
+aws budgets describe-notifications-for-budget --account-id 111111111111 \
+  --budget-name networking-fun-dev-25usd --profile default
+```
 
 **Verify guardrails work:** After Phase 6 (when you have a profile for the dev account),
 this should be denied by the region-lock SCP:
