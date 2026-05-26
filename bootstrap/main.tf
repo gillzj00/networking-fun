@@ -1,11 +1,8 @@
 terraform {
-  backend "s3" {
-    bucket       = "tfstate-networking-fun-222222222222"
-    key          = "bootstrap/terraform.tfstate"
-    region       = "us-east-2"
-    use_lockfile = true
-    encrypt      = true
-  }
+  # Backend config supplied at init time via -backend-config flags or
+  # backend.hcl, so the account ID stays out of version control. See
+  # bootstrap/README.md or the runbook for the init command.
+  backend "s3" {}
 }
 
 data "aws_caller_identity" "current" {}
@@ -64,9 +61,16 @@ resource "aws_s3_bucket_lifecycle_configuration" "tfstate" {
 # ---------- GitHub Actions OIDC ----------
 
 resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+
+  # AWS validates the JWKS for token.actions.githubusercontent.com automatically,
+  # so the thumbprint is largely ceremonial. Both currently-published GitHub
+  # thumbprints are pinned so a single rotation event doesn't break OIDC.
+  thumbprint_list = [
+    "6938fd4d98bab03faadb97b34396831e3780aea1",
+    "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
+  ]
 }
 
 data "aws_iam_policy_document" "gha_trust" {
