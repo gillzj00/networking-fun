@@ -236,7 +236,9 @@ later (and is required to close the account cleanly).
 
 ## Phase 4 — Apply guardrails (SCPs + tag policy + budget)
 
-- [ ] Done
+- [x] SCP `workloads-baseline` (`p-foeniyx6`) attached to Workloads OU (2026-05-25)
+- [x] Tag policy `require-standard-tags` (`p-95zla5mytk`) attached to Workloads OU (2026-05-25)
+- [ ] **YOU TODO:** create $25/mo budget in the management account console (steps below)
 
 **CLAUDE:** Attach the baseline SCP and tag policy to the Workloads OU.
 
@@ -298,7 +300,13 @@ aws ec2 describe-instances --region us-west-2 --profile networking-fun-dev
 
 ## Phase 5 — Identity Center permission sets + assignment
 
-- [ ] Done
+- [x] Done (2026-05-25)
+- SSO instance: `arn:aws:sso:::instance/ssoins-79070b7972f6e5ba`
+- Identity Store: `d-9267e73b96`
+- User: `zach-sso` (`3801e340-3091-709c-240e-b2c4fcff0ea3`)
+- `NetworkingFunDevAdmin`: `arn:aws:sso:::permissionSet/ssoins-79070b7972f6e5ba/ps-7907d5f5dd52a5a6` (AdministratorAccess attached)
+- `NetworkingFunDevReadOnly`: `arn:aws:sso:::permissionSet/ssoins-79070b7972f6e5ba/ps-79079cbccaa5b73b` (ReadOnlyAccess attached)
+- Both assigned to user on dev account `065882629560`
 
 **CLAUDE:** Two permission sets, both assigned to your user against the new account.
 
@@ -319,7 +327,7 @@ DEV_ACCOUNT_ID=065882629560
 ADMIN_PS_ARN=$(aws sso-admin create-permission-set \
   --instance-arn "$SSO_INSTANCE_ARN" \
   --name NetworkingFunDevAdmin \
-  --description "Admin access to networking-fun-dev — 4h sessions" \
+  --description "Admin access to networking-fun-dev - 4h sessions" \
   --session-duration PT4H \
   --region us-west-2 \
   --query 'PermissionSet.PermissionSetArn' --output text)
@@ -369,7 +377,7 @@ aws identitystore list-users --identity-store-id "$IDENTITY_STORE_ID" --region u
 
 ## Phase 6 — Local AWS CLI profile
 
-- [ ] Done
+- [x] Done (2026-05-25) — profiles `networking-fun-dev` and `networking-fun-dev-ro` added to `~/.aws/config`; existing `zach-sso` SSO session covered both; region-lock test confirmed (us-west-2 deny via SCP `p-foeniyx6`, us-east-2 success).
 
 **CLAUDE:** Append two new profiles to `~/.aws/config` (reusing the existing
 `[sso-session zach-sso]` block so the login flow is shared):
@@ -406,7 +414,12 @@ aws sts get-caller-identity --profile networking-fun-dev
 
 ## Phase 7 — Apply Terraform bootstrap in `networking-fun-dev`
 
-- [ ] Done
+- [x] Done (2026-05-25) — 8 resources created, state migrated to S3.
+- State bucket: `tfstate-networking-fun-065882629560` (versioned, SSE-S3, PAB on, 90d non-current expiration)
+- OIDC provider: `arn:aws:iam::065882629560:oidc-provider/token.actions.githubusercontent.com`
+- GHA role: `arn:aws:iam::065882629560:role/gha-terraform` (trusts `repo:gillzj00/networking-fun:*`, 4h sessions, AdministratorAccess)
+- Outputs saved locally to `bootstrap-outputs.json` (gitignored).
+- Backend block in `bootstrap/main.tf` now uncommented with the real bucket; subsequent runs use S3 directly.
 
 **DECISION:** First `terraform apply` against the dev account. Creates: S3 state bucket,
 GitHub OIDC provider, IAM role for GitHub Actions. All cheap (<$1/mo). Confirm before
@@ -448,7 +461,7 @@ terraform init -migrate-state
 
 ## Phase 8 — End-to-end verification
 
-- [ ] Done
+- [x] Done (2026-05-25) — all checks green: SSO works, SCP region lock active (us-west-2 deny on `ec2:DescribeInstances`), state bucket PAB on, SSE-S3 + versioning on, OIDC provider exists, GHA role exists with `AdministratorAccess` and correct trust policy.
 
 Confirm everything fits together:
 
