@@ -17,6 +17,10 @@ ready to receive the Terraform in [`bootstrap/`](../../bootstrap/).
 | Owner contact email | `5639243+gillzj00@users.noreply.github.com` |
 | Member account name | `networking-fun-dev` |
 | Member account email | `<your-aws-account-email>` (`+` aliasing works on most email providers) |
+| Member account ID | `222222222222` (created 2026-05-25) |
+| Org ID | `o-XXXXXXXXXX` |
+| Root ID | `r-XXXX` |
+| Workloads OU ID | `ou-XXXX-XXXXXXXX` |
 | Budget cap | `$25` / month |
 | Lab TTL | `4h` |
 
@@ -35,7 +39,7 @@ Tick the checkbox at the start of each phase as you finish it.
 
 ## Phase 0 — Refresh SSO and audit current state
 
-- [ ] Done
+- [x] Done (2026-05-25)
 
 **YOU:** Refresh your SSO session (opens a browser).
 
@@ -67,7 +71,7 @@ account in the org (management). Zero or one OUs. Zero or one CloudTrail trails.
 
 ## Phase 1 — Organization baseline (OUs + policy types)
 
-- [ ] Done
+- [x] Done (2026-05-25) — SCP + TAG_POLICY enabled on root `r-XXXX`; Workloads OU `ou-XXXX-XXXXXXXX` created
 
 **CLAUDE:**
 
@@ -98,38 +102,92 @@ that structure is theater. The Workloads OU exists so guardrails attach at the O
 
 ## Phase 2 — Org-wide CloudTrail
 
-- [ ] Done
+- [x] Done (2026-05-25) — created via CLI from the management account.
 
-**YOU:** Console-driven (the org-trail enablement step is friendlier in the console).
+**CLAUDE (CLI flow — what was actually run):**
 
-1. Open CloudTrail in `us-east-2` while logged in to the management account.
-2. Trails → Create trail
-   - Name: `org-trail`
-   - Enable for all accounts in my organization: **YES**
-   - Storage: new S3 bucket `aws-cloudtrail-org-111111111111-us-east-2`
-   - Log file SSE: SSE-S3 (cheaper than KMS for this volume)
-   - Log file validation: enabled
-   - CloudWatch Logs: **disabled** (saves money; CloudTrail S3 alone is enough)
-3. Events:
-   - Management events: Read + Write
-   - Data events: **off** (these are what blow up the bill)
-   - Insights events: **off**
+```bash
+# 1. Enable CloudTrail as a trusted service so org trails are allowed
+aws organizations enable-aws-service-access \
+  --service-principal cloudtrail.amazonaws.com
+
+# 2. Create the S3 bucket in us-east-2 (LocationConstraint required outside us-east-1)
+aws s3api create-bucket \
+  --bucket aws-cloudtrail-org-111111111111-us-east-2 \
+  --region us-east-2 \
+  --create-bucket-configuration LocationConstraint=us-east-2
+
+# 3. Harden the bucket: PAB, versioning, SSE-S3, BucketOwnerEnforced (ACLs disabled)
+aws s3api put-public-access-block \
+  --bucket aws-cloudtrail-org-111111111111-us-east-2 \
+  --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+
+aws s3api put-bucket-versioning \
+  --bucket aws-cloudtrail-org-111111111111-us-east-2 \
+  --versioning-configuration Status=Enabled
+
+aws s3api put-bucket-encryption \
+  --bucket aws-cloudtrail-org-111111111111-us-east-2 \
+  --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":false}]}'
+
+aws s3api put-bucket-ownership-controls \
+  --bucket aws-cloudtrail-org-111111111111-us-east-2 \
+  --ownership-controls 'Rules=[{ObjectOwnership=BucketOwnerEnforced}]'
+
+# 4. Apply CloudTrail bucket policy (template at policies/cloudtrail-bucket-policy.json)
+aws s3api put-bucket-policy \
+  --bucket aws-cloudtrail-org-111111111111-us-east-2 \
+  --policy file://docs/account-setup/policies/cloudtrail-bucket-policy.json
+
+# 5. Create the trail (multi-region, org-wide, log file validation on)
+aws cloudtrail create-trail \
+  --name org-trail \
+  --s3-bucket-name aws-cloudtrail-org-111111111111-us-east-2 \
+  --is-multi-region-trail \
+  --is-organization-trail \
+  --enable-log-file-validation \
+  --region us-east-2
+
+# 6. Start logging
+aws cloudtrail start-logging --name org-trail --region us-east-2
+```
+
+**Defaults that match the runbook spec:**
+
+- Management events Read + Write: default event selector (`ReadWriteType=All`, `IncludeManagementEvents=true`)
+- Data events: off (default — `DataResources=[]`)
+- Insights events: off (default — none configured)
+- CloudWatch Logs delivery: off (not configured — saves the per-event ingest cost)
+- KMS: not used (SSE-S3 only)
+
+**Bucket policy notes:**
+
+- Bucket uses `BucketOwnerEnforced`, so ACLs are disabled. The classic
+  `s3:x-amz-acl = bucket-owner-full-control` condition on the CloudTrail `PutObject`
+  statement is omitted — including it would cause every CloudTrail delivery to fail.
+- Two `PutObject` statements: one for `AWSLogs/<mgmt-account-id>/*` (events generated
+  by the management account itself) and one for `AWSLogs/<org-id>/*` (events from
+  member accounts, which CloudTrail writes under the org-id prefix).
+- `aws:SourceArn` condition pins each statement to this specific trail, so a different
+  trail accidentally pointed at the same bucket can't write to it.
 
 **Verify:**
 
 ```bash
-aws cloudtrail list-trails --region us-east-2
 aws cloudtrail describe-trails --trail-name-list org-trail --region us-east-2 \
-  --query 'trailList[0].[Name,IsOrganizationTrail,IsMultiRegionTrail]'
-```
+  --query 'trailList[0].[Name,IsOrganizationTrail,IsMultiRegionTrail,LogFileValidationEnabled]'
+# Expected: [ "org-trail", true, true, true ]
 
-Should return `org-trail, true, true`.
+aws cloudtrail get-trail-status --name org-trail --region us-east-2 \
+  --query '[IsLogging,LatestDeliveryError]'
+# Expected: [ true, null ]  (LatestDeliveryError stays null when delivery works)
+```
 
 ---
 
 ## Phase 3 — Create the `networking-fun-dev` member account
 
-- [ ] Done
+- [x] Done (2026-05-25) — account `222222222222` created, moved into Workloads OU. Email verification still TODO.
 
 **DECISION:** Creating an account is **slow to fully reverse** (90-day closure delay) and
 starts a billing relationship. Confirm before proceeding.

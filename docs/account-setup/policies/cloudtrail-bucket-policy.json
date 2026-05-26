@@ -1,0 +1,41 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AWSCloudTrailAclCheck",
+      "Effect": "Allow",
+      "Principal": {"Service": "cloudtrail.amazonaws.com"},
+      "Action": "s3:GetBucketAcl",
+      "Resource": "arn:aws:s3:::aws-cloudtrail-org-111111111111-us-east-2",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceArn": "arn:aws:cloudtrail:us-east-2:111111111111:trail/org-trail"
+        }
+      }
+    },
+    {
+      "Sid": "AWSCloudTrailWriteMgmtAccount",
+      "Effect": "Allow",
+      "Principal": {"Service": "cloudtrail.amazonaws.com"},
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::aws-cloudtrail-org-111111111111-us-east-2/AWSLogs/111111111111/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceArn": "arn:aws:cloudtrail:us-east-2:111111111111:trail/org-trail"
+        }
+      }
+    },
+    {
+      "Sid": "AWSCloudTrailWriteOrgMembers",
+      "Effect": "Allow",
+      "Principal": {"Service": "cloudtrail.amazonaws.com"},
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::aws-cloudtrail-org-111111111111-us-east-2/AWSLogs/o-XXXXXXXXXX/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:SourceArn": "arn:aws:cloudtrail:us-east-2:111111111111:trail/org-trail"
+        }
+      }
+    }
+  ]
+}
