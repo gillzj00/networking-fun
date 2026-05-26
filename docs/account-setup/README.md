@@ -40,8 +40,11 @@ Tick the checkbox at the start of each phase as you finish it.
 **YOU:** Refresh your SSO session (opens a browser).
 
 ```bash
-aws-sso-util login --profile default
+aws sso login --profile default
 ```
+
+> `aws-sso-util` 4.33.0 doesn't parse the `sso-session` block in your `~/.aws/config`,
+> so we use the native AWS CLI for login throughout this runbook.
 
 **CLAUDE:** Once logged in, run the audit so I know what already exists:
 
@@ -298,37 +301,35 @@ aws identitystore list-users --identity-store-id "$IDENTITY_STORE_ID" --region u
 
 - [ ] Done
 
-**CLAUDE:** Auto-populate `~/.aws/config` with profiles for every account/permission-set
-combination you have access to.
+**CLAUDE:** Append two new profiles to `~/.aws/config` (reusing the existing
+`[sso-session zach-sso]` block so the login flow is shared):
 
-```bash
-aws-sso-util configure populate \
-  --region us-east-2 \
-  --sso-start-url https://zach-gill-2025.awsapps.com/start \
-  --sso-region us-west-2 \
-  --profile-name-components account_name,role_name
+```ini
+[profile networking-fun-dev]
+sso_session    = zach-sso
+sso_account_id = <DEV_ACCOUNT_ID>
+sso_role_name  = NetworkingFunDevAdmin
+region         = us-east-2
+
+[profile networking-fun-dev-ro]
+sso_session    = zach-sso
+sso_account_id = <DEV_ACCOUNT_ID>
+sso_role_name  = NetworkingFunDevReadOnly
+region         = us-east-2
 ```
 
-After running, you should see profiles like:
+Then log in (single login covers both new profiles via the shared sso-session):
 
-- `networking-fun-dev.NetworkingFunDevAdmin`
-- `networking-fun-dev.NetworkingFunDevReadOnly`
+```bash
+aws sso login --profile networking-fun-dev
+```
 
 **Verify:**
 
 ```bash
-aws sts get-caller-identity --profile networking-fun-dev.NetworkingFunDevAdmin
+aws sts get-caller-identity --profile networking-fun-dev
 # Account: <DEV_ACCOUNT_ID>
-# Arn:     arn:aws:sts::<DEV_ACCOUNT_ID>:assumed-role/AWSReservedSSO_NetworkingFunDevAdmin_*
-```
-
-**Optional:** if the auto-generated profile name is too long, alias it:
-
-```ini
-# In ~/.aws/config — add at the end
-[profile networking-fun-dev]
-source_profile = networking-fun-dev.NetworkingFunDevAdmin
-region         = us-east-2
+# Arn:     arn:aws:sts::<DEV_ACCOUNT_ID>:assumed-role/AWSReservedSSO_NetworkingFunDevAdmin_*/<your-sso-user>
 ```
 
 ---
@@ -348,7 +349,7 @@ cd bootstrap
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars to confirm owner_email and github_repo
 
-export AWS_PROFILE=networking-fun-dev.NetworkingFunDevAdmin
+export AWS_PROFILE=networking-fun-dev
 terraform init
 terraform plan -out=tfplan
 terraform apply tfplan
@@ -380,26 +381,26 @@ Confirm everything fits together:
 
 ```bash
 # 1. SSO session works
-aws-sso-util check --check-profile networking-fun-dev.NetworkingFunDevAdmin
+aws sts get-caller-identity --profile networking-fun-dev
 
 # 2. SCP region lock is active (this should FAIL)
 aws ec2 describe-instances --region us-west-2 \
-  --profile networking-fun-dev.NetworkingFunDevAdmin
+  --profile networking-fun-dev
 # Expected: AccessDenied with "explicit deny in a service control policy"
 
 # 3. State bucket exists and is private
 aws s3api get-public-access-block \
   --bucket "tfstate-networking-fun-$(aws sts get-caller-identity \
-    --profile networking-fun-dev.NetworkingFunDevAdmin --query Account --output text)" \
-  --profile networking-fun-dev.NetworkingFunDevAdmin
+    --profile networking-fun-dev --query Account --output text)" \
+  --profile networking-fun-dev
 
 # 4. OIDC provider exists
 aws iam list-open-id-connect-providers \
-  --profile networking-fun-dev.NetworkingFunDevAdmin
+  --profile networking-fun-dev
 
 # 5. GHA role can be described
 aws iam get-role --role-name gha-terraform \
-  --profile networking-fun-dev.NetworkingFunDevAdmin
+  --profile networking-fun-dev
 ```
 
 Then in a throwaway PR, add a workflow that assumes the OIDC role and runs
@@ -412,9 +413,9 @@ you're done.
 
 | Need to... | Run |
 |---|---|
-| Refresh SSO | `aws-sso-util login --profile default` |
-| Check session | `aws-sso-util check --check-profile <profile>` |
-| Reset profiles after IDC changes | `aws-sso-util configure populate ...` (see Phase 6) |
+| Refresh SSO | `aws sso login --profile default` |
+| Check session | `aws sts get-caller-identity --profile <profile>` |
+| Add a new profile | append to `~/.aws/config` (see Phase 6 template) |
 | Force destroy a lab env | `/lab destroy` comment on the PR (post-platform-deploy) |
 | Read CloudTrail events | `aws cloudtrail lookup-events --region us-east-2` |
 
