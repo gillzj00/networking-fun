@@ -8,6 +8,9 @@
 # Terraform output dumps (contain account IDs / ARNs — keep local until M1 redact)
 bootstrap-outputs.json
 
+# Backend config — contains the dev account ID in the bucket name
+backend.hcl
+
 # Crash log files
 crash.log
 crash.*.log

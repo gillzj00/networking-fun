@@ -32,11 +32,16 @@ ready to receive the Terraform in [`bootstrap/`](../../bootstrap/).
 
 Tick the checkbox at the start of each phase as you finish it.
 
-> **Pre-public-flip TODO.** This file contains the management account ID, the dev
-> account ID, org ID, root ID, and Workloads OU ID. Before flipping the repo public at
-> M1, move this file into a `.gitignore`d path or redact the IDs. The
-> `policies/cloudtrail-bucket-policy.json` template also has the management account ID
-> and org ID baked into resource ARNs — redact alongside.
+> **Pre-public-flip TODO.** Three tracked files leak identifiers that must be redacted
+> before flipping the repo public at M1:
+>
+> - This file — management account ID, dev account ID, org ID, root ID, Workloads OU ID.
+>   Either move into a `.gitignore`d path or redact the IDs.
+> - `policies/cloudtrail-bucket-policy.json` — management account ID and org ID baked
+>   into resource ARNs.
+> - `bootstrap/main.tf` — historically pinned the dev account ID in the backend block.
+>   F-12 cleanup migrated that to `-backend-config` at init time; the canonical command
+>   is now `terraform init -backend-config=backend.hcl` with `backend.hcl` gitignored.
 
 ---
 
@@ -471,14 +476,19 @@ cd bootstrap
 cp terraform.tfvars.example terraform.tfvars
 # Edit terraform.tfvars to confirm owner_email and github_repo
 
+cp backend.hcl.example backend.hcl
+# Edit backend.hcl: replace <DEV_ACCOUNT_ID> with the real ID.
+# backend.hcl is gitignored.
+
 export AWS_PROFILE=networking-fun-dev
-terraform init
+terraform init -backend-config=backend.hcl
 terraform plan -out=tfplan
 terraform apply tfplan
 ```
 
-Then update the `backend "s3"` block at the top of `bootstrap/main.tf` to use account
-`065882629560` (the dev account) before running `terraform init -migrate-state`.
+The backend config is supplied at init time so the account ID stays out of version
+control (F-12). Subsequent `terraform init` calls in the same working directory pick up
+the saved `.terraform/terraform.tfstate` automatically.
 
 Capture outputs:
 
@@ -487,14 +497,11 @@ terraform output -json > ../bootstrap-outputs.json
 # Keep this locally; gha_role_arn will go into GitHub Actions secrets / workflow inputs.
 ```
 
-**Migrate state to S3** (one-time, after first apply):
-
-```bash
-# Uncomment the `backend "s3"` block at the top of bootstrap/main.tf
-# (bucket name will be tfstate-networking-fun-065882629560).
-terraform init -migrate-state
-# Confirm "yes" when prompted. Local state file gets pushed into S3.
-```
+For a from-scratch bootstrap (chicken-and-egg: state bucket doesn't exist yet), comment
+out the `backend "s3" {}` block in `main.tf`, apply once with local state, then
+uncomment and run `terraform init -backend-config=backend.hcl -migrate-state` to push
+local state into the freshly-created bucket. After that, subsequent runs just need
+`terraform init -backend-config=backend.hcl`.
 
 ---
 
