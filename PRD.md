@@ -1,7 +1,7 @@
 # networking-fun — Product Requirements Document
 
-**Status:** Draft v1
-**Last updated:** 2026-05-25
+**Status:** Draft v1 — **M1 shipped 2026-05-26 (repo public)**
+**Last updated:** 2026-05-26
 **Owner:** @gillzj00
 **Target ship (v1):** 2026-07-06 (6 weeks)
 
@@ -189,32 +189,34 @@ Assumes ~10–15 hrs/week, soft deadline 6 weeks from 2026-05-25.
 
 | Milestone | Target date | Deliverables | Public-flip? |
 |---|---|---|---|
-| **M1: Bootstrap done** | 2026-06-08 | Phases 0–3 complete (Org, sub-account, IDC, OIDC, S3 state, DNS delegation, ACM, Budget, janitor Lambda). README pitch + diagram + roadmap. Branch protection. Trunk-on-main. | **Yes — flip public here.** |
+| **M1: Bootstrap done** | **SHIPPED 2026-05-26** (target was 2026-06-08) | Org, sub-account, IDC, OIDC, S3 state, baseline SCP + tag policy, CloudTrail org-trail, Budget, security audit + M1-blocker remediation. Branch protection on `main`. `production` GitHub environment locked to required reviewer + main-only deploy. Trunk-on-main. **DNS delegation, ACM, and janitor Lambda are tracked as separate M1-tagged issues (#5, #6) and remain open.** | **Yes — flipped 2026-05-26** |
 | **M2: Lab #1 + IDP loop live** | 2026-06-22 | Manifest schema + validator. PR-driven provision/destroy. Lab #1 with ≥3 scenarios. PR comment bot. Loom v1 recorded. | Already public |
 | **M3: v1 complete** | 2026-07-06 | Lab #2 with ≥3 scenarios. Terratest suite green. Loom re-recorded with both labs. All G1–G6 satisfied. | Already public |
 
 ## 14. Public-flip checklist (gate for M1)
 
+Marks reflect actual state after 2026-05-26 flip.
+
 **Security:**
-- [ ] No AWS account IDs hardcoded.
-- [ ] No personal email beyond `OwnerEmail` tag (variable, defaulted).
-- [ ] `.gitignore` covers `*.tfstate`, `*.tfvars`, `.env`, `.aws/`.
-- [ ] `gitleaks` clean on full history.
-- [ ] Branch protection on `main`: PR required, status checks required, no force-push.
-- [ ] No long-lived AWS keys in GH secrets; OIDC role ARN only.
+- [x] No AWS account IDs hardcoded — `git-filter-repo` rewrote history to placeholders pre-flip; `bootstrap/main.tf` backend config injected via gitignored `backend.hcl` (F-12).
+- [x] No personal email beyond `OwnerEmail` tag (variable, defaulted to `5639243+gillzj00@users.noreply.github.com`).
+- [x] `.gitignore` covers `*.tfstate`, `*.tfvars`, `backend.hcl`, `bootstrap-outputs.json`, `replacements.txt`.
+- [x] Manual scan clean on full history (no AWS keys / GH tokens / private keys / sensitive AWS IDs). `gitleaks` not run.
+- [x] Branch protection on `main`: PR required, linear history, no force-push, no deletions, conversation resolution required. `enforce_admins=false` (owner can bypass).
+- [x] No long-lived AWS keys in GH secrets; OIDC role ARN only (`gha-terraform`, sub-claim restricted to `ref:refs/heads/main` + `environment:production` per F-01).
 
 **Quality:**
-- [ ] README: vision, architecture diagram, status badge, roadmap, "what's not here yet."
-- [ ] LICENSE (MIT).
-- [ ] Commit messages reviewed; no junk/WIP.
-- [ ] Repo description, topics, homepage URL set.
-- [ ] Default branch `main`; `develop` removed.
-- [ ] Status badges in README (GH Actions, license).
+- [x] README: brief overview + status + links to PRD / runbook / audit. **Full pitch + architecture diagram + roadmap still pending (Loom-driven, M2 deliverable).**
+- [ ] LICENSE (MIT). **Open.**
+- [x] Commit messages reviewed; no junk/WIP.
+- [ ] Repo description, topics, homepage URL set. **Open.**
+- [x] Default branch `main`; `develop` removed.
+- [ ] Status badges in README (GH Actions, license). **Deferred — no workflows defined yet (M2).**
 
 **Posture:**
-- [ ] CONTRIBUTING.md (short — "portfolio project, PRs welcome but not the goal").
-- [ ] CODEOWNERS with `@gillzj00`.
-- [ ] Issue templates off or minimal.
+- [ ] CONTRIBUTING.md (short — "portfolio project, PRs welcome but not the goal"). **Open.**
+- [ ] CODEOWNERS with `@gillzj00`. **Open — `production` environment required-reviewer already enforces `@gillzj00`.**
+- [ ] Issue templates off or minimal. **Default templates, not customized.**
 
 ## 15. Roadmap (post-v1)
 
