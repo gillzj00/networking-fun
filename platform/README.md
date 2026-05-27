@@ -6,12 +6,56 @@ consume but that itself outlives any individual PR. Today this layer owns:
 - A trivial CloudWatch log group (`/networking-fun/platform/demo`) — only
   there to prove the GitOps loop end-to-end; will be removed once real
   platform resources have displaced it.
+- The Janitor Lambda and AWS Budgets (this slice).
 - A delegated Route53 zone for `labs.gillzhub.com` — vanity URLs for the
   ephemeral lab envs (`pr-<N>.labs.gillzhub.com`).
 - A wildcard ACM cert for `*.labs.gillzhub.com` (us-east-2, DNS-validated).
 
-Future slices add the Janitor Lambda, Budgets alarm, and the lab module
-registry (see [PRD §6](../PRD.md#6-architecture--three-layers)).
+Future slices add the lab module registry (see
+[PRD §6](../PRD.md#6-architecture--three-layers)).
+
+## Janitor Lambda
+
+`platform-janitor` is a Python 3.12 Lambda triggered every 15 minutes by an
+EventBridge schedule. It uses the Resource Groups Tagging API to find any
+resource whose `AutoDelete` tag is an ISO 8601 timestamp in the past,
+publishes the count to the `NetworkingFun/Janitor` CloudWatch metric
+namespace, and emits one structured log line per scan.
+
+A `platform-janitor-errors` CloudWatch alarm watches `AWS/Lambda Errors`
+on the function and routes to the `platform-alerts` SNS topic. The topic
+has one email subscription on `OwnerEmail` — **subscription confirmation
+is a one-time manual step**: after apply, click the link in the AWS-sent
+confirmation email or the alarm won't deliver.
+
+### v1: scanner-only
+
+The PRD specifies that destruction should run `terraform destroy` against
+the per-PR state file at `s3://<bucket>/labs/<pr-number>/terraform.tfstate`
+so we don't orphan state. That state doesn't exist yet — `labs/runtime/`
+is built in slice 8 (issue #8). Rather than ship a direct-API destroyer we
+would then have to rip out, the v1 Lambda is **scanner-only**: it finds
+expired resources, logs them, and emits a metric. The destroy path will
+be wired up alongside slice 8 by triggering the lab-destroy workflow with
+the affected PR number(s).
+
+In the meantime the alarm, schedule, IAM role, and SNS plumbing all exist
+and exercise the GitOps loop end-to-end.
+
+## Budgets
+
+Two AWS Budgets, both notify `OwnerEmail` at 80% actual and 100% forecast:
+
+| Budget | Limit | Scope |
+|---|---|---|
+| `networking-fun-monthly` | $25/mo | Whole sub-account |
+| `networking-fun-terratest` | $5/mo | Resources tagged `Workload=terratest` (set by slice 9) |
+
+The `Workload` tag must be **activated as a cost-allocation tag** in the
+Billing console before the Terratest budget can read non-zero spend. This
+is a one-time manual step in the management account
+(`Billing → Cost allocation tags → User-defined → Workload → Activate`).
+It can wait until slice 9 actually starts emitting the tag.
 
 ## Trigger model
 
