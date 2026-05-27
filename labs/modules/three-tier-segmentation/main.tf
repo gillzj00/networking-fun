@@ -266,7 +266,7 @@ resource "aws_vpc_security_group_egress_rule" "tier_to_peer" {
   }
 
   security_group_id            = aws_security_group.tier[each.value.src].id
-  description                  = "Egress from ${each.value.src} SG to ${each.value.dst} SG on ${each.value.dst}'s service port."
+  description                  = "Egress from ${each.value.src} SG to ${each.value.dst} SG on ${each.value.dst} service port."
   ip_protocol                  = "tcp"
   from_port                    = local.tier_ports[each.value.dst]
   to_port                      = local.tier_ports[each.value.dst]
