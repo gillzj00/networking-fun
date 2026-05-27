@@ -538,6 +538,62 @@ you're done.
 
 ---
 
+## Phase 9 — Delegate `labs.gillzhub.com` to the dev sub-account
+
+- [ ] Done
+
+**YOU.** One-time manual step. Adds the NS record in the parent
+`gillzhub.com` zone (management account) that delegates the
+`labs.gillzhub.com` subdomain to the child zone in the
+`networking-fun-dev` sub-account.
+
+Why this is manual instead of Terraform: the parent zone lives in the
+management account, where IaC currently has no cross-account role. Adding
+one for a single 4-line record means widening the trust surface of the
+most privileged account in the org. The tradeoff isn't worth it for a
+one-time, low-churn record — re-run this phase only if the child zone is
+ever re-created with new nameservers.
+
+### Prerequisites
+
+- The `platform/` slice creating the child zone has been applied. Capture
+  the output:
+  ```bash
+  cd platform
+  terraform output labs_zone_name_servers
+  ```
+  You'll get four nameservers like `ns-123.awsdns-15.com.`,
+  `ns-456.awsdns-22.net.`, etc.
+
+### Steps
+
+1. Sign into the **management account** Identity Center session.
+2. Console → Route 53 → Hosted zones → `gillzhub.com` → **Create record**.
+3. Record name: `labs` (full name will be `labs.gillzhub.com`).
+4. Record type: `NS`.
+5. TTL: `172800` (48 h — Route 53 default for NS records).
+6. Value: paste the four nameservers from `labs_zone_name_servers`, one
+   per line, including the trailing dots.
+7. Routing policy: Simple. **Create records**.
+
+### Verify
+
+From any machine with public DNS:
+
+```bash
+dig labs.gillzhub.com NS +short
+```
+
+Expect the four child-zone nameservers above (not the parent zone's
+nameservers). Propagation usually takes < 60 s but can take up to 5 min.
+
+Once `dig` returns the expected nameservers, the
+`enable_acm_validation = true` follow-up PR in `platform/` will be able
+to drive the wildcard ACM cert to `ISSUED`. See
+[`platform/README.md`](../../platform/README.md#dns-delegation-and-wildcard-acm).
+
+---
+
 ## Cheatsheet
 
 | Need to... | Run |
