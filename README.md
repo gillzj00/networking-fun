@@ -1,43 +1,56 @@
 # networking-fun
 
-An ephemeral-environment Internal Developer Platform (IDP-lite) for AWS networking
-labs. A developer opens a PR with a YAML manifest declaring which lab and which fault
-scenario; GitHub Actions provisions an isolated VPC, posts a connectivity probe matrix
-back as a PR comment, and tears the lab down when the PR closes or a 4-hour TTL
-elapses.
+An ephemeral-environment Internal Developer Platform (IDP-lite) for AWS
+networking labs. A developer opens a PR with a YAML manifest declaring which
+lab and which fault scenario; GitHub Actions provisions an isolated VPC,
+posts a connectivity probe matrix back as a PR comment, and tears the lab
+down when the PR closes or a 4-hour TTL elapses.
 
-This is a **portfolio project** demonstrating platform-engineering, multi-account AWS,
-GitOps, and cost engineering. It is also the author's own AWS-networking sandbox.
+A **portfolio project** demonstrating platform engineering, multi-account
+AWS, GitOps, and cost engineering — and the author's own AWS-networking
+sandbox.
 
-## Status — under construction
+## Status
 
 | Milestone | Status |
 |---|---|
 | **M1** Bootstrap, multi-account org baseline, repo public | ✅ Shipped 2026-05-26 |
-| **M2** Lab #1 (Layered Reachability) + IDP loop live | 🚧 In progress, target 2026-06-22 |
+| **M2** Lab #1 (Layered Reachability) + IDP loop live | 🚧 Target 2026-06-22 |
 | **M3** Lab #2 (Three-Tier Segmentation) + Terratest suite | ⏳ Target 2026-07-06 |
 
-There is no live demo yet. A Loom walkthrough will land with M2.
+No live demo yet. A Loom walkthrough lands with M2.
 
-## Where to read more
+## Architecture
 
-- [`PRD.md`](./PRD.md) — product requirements, architecture, lab catalog, roadmap.
-- [`docs/account-setup/`](./docs/account-setup/) — the manual AWS bootstrap runbook
-  (org, IDC, OIDC, S3 state). Reproducible if you fork.
-- [`docs/security/`](./docs/security/) — security audit findings and remediations.
-  Live tracker for open hardening work is **GitHub issue #17**.
-- [`bootstrap/`](./bootstrap/) — Terraform layer applied manually from an IDC SSO
-  session. Creates the S3 state bucket, GitHub OIDC provider, and CI role.
+Three layers, with deliberately different apply paths so the credential
+surface CI itself depends on can't be changed by CI:
 
-## Architecture (one-paragraph version)
+| Layer | Apply | Purpose |
+|---|---|---|
+| [`bootstrap/`](./bootstrap/) | Manual `terraform apply` from an IDC SSO session | S3 state bucket, GitHub OIDC provider, `gha-terraform` CI role. |
+| [`platform/`](./platform/) | GitHub Actions via OIDC, merge to `main` | Janitor Lambda, AWS Budgets, Route53 zone, wildcard ACM. |
+| [`labs/runtime/`](./labs/) | GitHub Actions per-PR, auto-destroy on close | Per-PR VPC, EC2, probe Lambda for one lab + scenario. |
 
-Three layers: `bootstrap/` (manual `terraform apply`, intentionally outside CI),
-`platform/` (GitOps via GitHub Actions OIDC on merge to `main`), and `labs/runtime/`
-(per-PR, auto-provisioned and auto-destroyed). A blast-radius safety rail fails any
-PR whose plan touches bootstrap-owned resources. See PRD §6 for the full table.
+A blast-radius safety rail fails any `platform/` PR whose plan touches
+bootstrap-owned resources. Full table in [PRD §6](./PRD.md#6-architecture--three-layers).
 
-## Operating notes
+## Repo map
 
-All identifiers in checked-in docs (account IDs, org IDs, OU IDs, SCP IDs, etc.) are
-placeholders — real values were redacted from git history before the public flip via
-`git-filter-repo`. Fork-and-substitute is supported but not actively marketed.
+```
+bootstrap/         # Layer 1 — manual TF; OIDC, state bucket, CI role
+platform/          # Layer 2 — GitOps TF; janitor, budgets, DNS, ACM
+labs/
+  modules/         #   Lab modules (per-module README has scenario detail)
+  runtime/         #   Per-PR root composing one lab + probe module
+tests/             # Terratest harness (Go) + janitor unit test (Python)
+.platform/         # Manifest schema + example
+.github/           # Workflows + scripts (manifest validator, blast-radius)
+docs/
+  account-setup/   # Manual AWS Org bootstrap runbook (9 phases)
+  security/        # Slice 1 audit findings; open work in issue #17
+  branch-protection.md
+PRD.md             # Full product spec, lab catalog, roadmap
+```
+
+All AWS/org identifiers in checked-in docs are placeholders. Real values
+were stripped from git history via `git-filter-repo` before the public flip.
