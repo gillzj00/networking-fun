@@ -50,6 +50,17 @@ resource "aws_vpc" "this" {
   })
 }
 
+resource "aws_default_security_group" "this" {
+  vpc_id = aws_vpc.this.id
+
+  # Strip default ingress/egress so anything that accidentally lands on the
+  # default SG cannot talk to anything. Lab SGs below are the only allowed paths.
+
+  tags = merge(local.module_tags, {
+    Name = "${local.name_prefix}-default-locked"
+  })
+}
+
 resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.this.id
   cidr_block        = var.private_subnet_cidr
