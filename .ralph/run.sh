@@ -51,17 +51,18 @@ for i in $(seq 1 "$MAX_ITERS"); do
     exit 1
   fi
 
-  # Bail early if there's nothing left to grab.
+  # Bail early only when there's nothing to merge AND nothing to ship.
   if [ -n "$LABEL_FILTER" ]; then
-    remaining=$(gh issue list --state open --label "$LABEL_FILTER" --json number --jq 'length')
+    open_issues=$(gh issue list --state open --label "$LABEL_FILTER" --json number --jq 'length')
   else
-    remaining=$(gh issue list --state open --json number --jq 'length')
+    open_issues=$(gh issue list --state open --json number --jq 'length')
   fi
-  if [ "$remaining" -eq 0 ]; then
-    echo "No open issues. Ralph goes home."
+  open_prs=$(gh pr list --author "@me" --state open --json number,isDraft --jq '[.[] | select(.isDraft == false)] | length')
+  if [ "$open_issues" -eq 0 ] && [ "$open_prs" -eq 0 ]; then
+    echo "No open issues and no open PRs to merge. Ralph goes home."
     exit 0
   fi
-  echo "$remaining open issue(s) remaining."
+  echo "$open_issues open issue(s), $open_prs of your PR(s) open."
 
   if ! claude "${CLAUDE_FLAGS[@]}" "$prompt"; then
     echo "Iteration $i failed. Sleeping 10s before retry."
