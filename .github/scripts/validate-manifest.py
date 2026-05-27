@@ -37,7 +37,12 @@ TTL_RE = re.compile(r"^([1-9][0-9]*)(s|m|h)$")
 # this narrows it so e.g. `lab: layered-reachability, scenario: nacl-stateless-return`
 # is rejected before Terraform runs.
 SCENARIOS_BY_LAB = {
-    "layered-reachability": {"happy-path"},
+    "layered-reachability": {
+        "happy-path",
+        "nacl-deny-egress",
+        "missing-vpc-endpoint",
+        "dns-disabled",
+    },
     "three-tier-segmentation": {
         "happy-path",
         "cidr-instead-of-sg",

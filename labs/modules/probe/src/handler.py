@@ -121,8 +121,44 @@ LAYERED_PROBES: dict[str, tuple[str, Callable[[], tuple[bool, str]]]] = {
     ),
 }
 
+# Expected pass/fail for each (scenario, probe) pair. A probe whose actual
+# result does not match its expected value is what `render-lab-comment.js`
+# highlights with `*` and what the workflow keys off for the green/red
+# rendering. happy-path is the all-pass baseline; each fault scenario
+# breaks one layer and the expectations reflect exactly which checks the
+# break should bite.
 LAYERED_EXPECTED: dict[str, dict[str, bool]] = {
     "happy-path": {name: True for name in LAYERED_PROBES},
+    # NACL denies all egress at the subnet boundary. DNS to the VPC
+    # resolver is intra-subnet and unaffected, so name resolution still
+    # works; anything that has to leave the subnet (the SSM endpoint
+    # ENIs are reached over TCP/443) is dropped statelessly.
+    "nacl-deny-egress": {
+        "dns_ssm_endpoint": True,
+        "dns_public_hostname": True,
+        "ssm_api_reachable": False,
+        "instance_registered_with_ssm": False,
+    },
+    # The `ssm` interface endpoint is removed; ssmmessages/ec2messages
+    # still exist. ssm.<region>.amazonaws.com falls through to public
+    # DNS (returns a public IP that the private subnet cannot route to),
+    # so DNS resolution still appears to succeed but every call to the
+    # control plane fails. Net: the agent cannot register.
+    "missing-vpc-endpoint": {
+        "dns_ssm_endpoint": True,
+        "dns_public_hostname": True,
+        "ssm_api_reachable": False,
+        "instance_registered_with_ssm": False,
+    },
+    # VPC DNS support is off, so the Amazon-provided resolver returns
+    # nothing. Every check that goes through `gethostbyname` or any AWS
+    # SDK call (which has to resolve an endpoint) fails.
+    "dns-disabled": {
+        "dns_ssm_endpoint": False,
+        "dns_public_hostname": False,
+        "ssm_api_reachable": False,
+        "instance_registered_with_ssm": False,
+    },
 }
 
 

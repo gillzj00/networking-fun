@@ -2,8 +2,9 @@
 #
 # Private-only VPC with one t4g.nano instance reachable through SSM via VPC
 # interface endpoints. No IGW, no NAT — the happy-path lesson is "you don't
-# need internet to manage instances if you have SSM endpoints." Slice 8 will
-# add fault scenarios that break individual layers (NACL, endpoint, DNS).
+# need internet to manage instances if you have SSM endpoints." The three
+# fault scenarios (nacl-deny-egress, missing-vpc-endpoint, dns-disabled)
+# each break one layer; see scenarios.tf and labs/README.md.
 
 data "aws_region" "current" {}
 
@@ -35,14 +36,46 @@ locals {
     Lab        = "layered-reachability"
     Scenario   = var.scenario
   }
+
+  # Per-scenario toggles. Each fault scenario flips exactly one layer so
+  # the probe matrix points at a single cause. See labs/README.md for the
+  # lesson tied to each scenario.
+  scenario_flags = {
+    "happy-path" = {
+      vpc_dns             = true
+      create_ssm_endpoint = true
+      private_dns         = true
+      deny_egress_nacl    = false
+    }
+    "nacl-deny-egress" = {
+      vpc_dns             = true
+      create_ssm_endpoint = true
+      private_dns         = true
+      deny_egress_nacl    = true
+    }
+    "missing-vpc-endpoint" = {
+      vpc_dns             = true
+      create_ssm_endpoint = false
+      private_dns         = true
+      deny_egress_nacl    = false
+    }
+    "dns-disabled" = {
+      vpc_dns             = false
+      create_ssm_endpoint = true
+      private_dns         = false
+      deny_egress_nacl    = false
+    }
+  }
+
+  flags = local.scenario_flags[var.scenario]
 }
 
 # ---------- VPC + subnet + route table ----------
 
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
-  enable_dns_support   = true
-  enable_dns_hostnames = true
+  enable_dns_support   = local.flags.vpc_dns
+  enable_dns_hostnames = local.flags.vpc_dns
 
   tags = merge(local.module_tags, {
     Name = "${local.name_prefix}-vpc"
@@ -136,10 +169,22 @@ resource "aws_vpc_security_group_egress_rule" "instance_to_endpoints" {
 # - ssmmessages:   bidirectional channel for Session Manager
 # - ec2messages:   instance heartbeat / agent telemetry
 #
-# Slice 8's missing-vpc-endpoint scenario disables one of these.
+# The missing-vpc-endpoint scenario drops the `ssm` endpoint so the agent
+# cannot reach the control plane; the other two stay so the failure is
+# pinned to a single missing endpoint rather than a blanket teardown.
+# The dns-disabled scenario keeps the endpoints but flips
+# private_dns_enabled off, so the regional hostnames no longer resolve
+# to the endpoint ENIs.
 
 locals {
-  endpoint_services = toset(["ssm", "ssmmessages", "ec2messages"])
+  endpoint_services = local.flags.create_ssm_endpoint ? toset([
+    "ssm",
+    "ssmmessages",
+    "ec2messages",
+    ]) : toset([
+    "ssmmessages",
+    "ec2messages",
+  ])
 }
 
 resource "aws_vpc_endpoint" "ssm_family" {
@@ -150,7 +195,7 @@ resource "aws_vpc_endpoint" "ssm_family" {
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private.id]
   security_group_ids  = [aws_security_group.endpoints.id]
-  private_dns_enabled = true
+  private_dns_enabled = local.flags.private_dns
 
   tags = merge(local.module_tags, {
     Name = "${local.name_prefix}-${each.key}-endpoint"

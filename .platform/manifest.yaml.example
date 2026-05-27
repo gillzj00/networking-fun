@@ -13,11 +13,18 @@
 #   scenario (per-lab whitelist enforced by the validator):
 #     layered-reachability:
 #       happy-path
+#       nacl-deny-egress
+#       missing-vpc-endpoint
+#       dns-disabled
 #     three-tier-segmentation:
 #       happy-path
 #       cidr-instead-of-sg
 #       nacl-stateless-return
 #       missing-chain-link
+#
+# Each fault scenario breaks one layer; the probe matrix reports
+# expected-vs-actual so a "failed" probe is the success criterion. See
+# labs/README.md for the per-scenario lesson.
 
 lab: layered-reachability
 scenario: happy-path

@@ -31,17 +31,20 @@ variable "lab" {
 }
 
 variable "scenario" {
-  description = "Fault scenario for the chosen lab. The manifest validator enforces the per-lab whitelist before Terraform runs; this variable validation guards against direct apply with an unsupported value."
+  description = "Fault scenario for the chosen lab. The manifest validator enforces the per-lab whitelist before Terraform runs; this variable validation is the union of every lab's enum so direct apply still gets a reasonable error for typos."
   type        = string
 
   validation {
     condition = contains([
       "happy-path",
+      "nacl-deny-egress",
+      "missing-vpc-endpoint",
+      "dns-disabled",
       "cidr-instead-of-sg",
       "nacl-stateless-return",
       "missing-chain-link",
     ], var.scenario)
-    error_message = "scenario must be one of: happy-path, cidr-instead-of-sg, nacl-stateless-return, missing-chain-link."
+    error_message = "scenario must be one of: happy-path, nacl-deny-egress, missing-vpc-endpoint, dns-disabled, cidr-instead-of-sg, nacl-stateless-return, missing-chain-link."
   }
 }
 

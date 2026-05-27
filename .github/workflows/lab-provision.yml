@@ -146,6 +146,7 @@ jobs:
 
       - name: wait for SSM registration
         id: wait
+        if: needs.guard.outputs.scenario == 'happy-path'
         working-directory: .
         env:
           LAB: ${{ needs.guard.outputs.lab }}
@@ -176,6 +177,17 @@ jobs:
               sleep 10
             done
           done
+
+      - name: settle non-happy-path scenarios
+        if: needs.guard.outputs.scenario != 'happy-path'
+        working-directory: .
+        run: |
+          # Fault scenarios expect SSM registration to fail. Skip the
+          # long poll loop but give the probe Lambda's VPC ENIs a moment
+          # to attach so the first invocation isn't a cold-start timeout
+          # on top of an expected probe failure.
+          echo "scenario=${{ needs.guard.outputs.scenario }} — skipping SSM wait, sleeping 60s for ENI attachment"
+          sleep 60
 
       - name: invoke probe
         id: invoke

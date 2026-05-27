@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/gillzj00/networking-fun/.platform/manifest.schema.json",
   "title": "networking-fun lab manifest",
-  "description": "Schema for .platform/manifest.yaml. Validates the lab/scenario/ttl/notes declared by a PR. The per-lab scenario whitelist (e.g. nacl-stateless-return is only valid for three-tier-segmentation) is enforced by .github/scripts/validate-manifest.py, not by this schema's enums, because JSON Schema's `oneOf` over conditional enums is awkward to read; the union is captured here and the script narrows it.",
+  "description": "Schema for .platform/manifest.yaml. Validates the lab/scenario/ttl/notes declared by a PR. The per-lab scenario whitelist (e.g. nacl-stateless-return is only valid for three-tier-segmentation, nacl-deny-egress is only valid for layered-reachability) is enforced by .github/scripts/validate-manifest.py, not by this schema's enums, because JSON Schema's `oneOf` over conditional enums is awkward to read; the union is captured here and the script narrows it.",
   "type": "object",
   "additionalProperties": false,
   "required": ["lab", "scenario"],
@@ -16,11 +16,14 @@
       "type": "string",
       "enum": [
         "happy-path",
+        "nacl-deny-egress",
+        "missing-vpc-endpoint",
+        "dns-disabled",
         "cidr-instead-of-sg",
         "nacl-stateless-return",
         "missing-chain-link"
       ],
-      "description": "Scenario for the chosen lab. Each lab accepts a subset of these (enforced by the validator script)."
+      "description": "Scenario for the chosen lab. Each lab accepts a subset of these (enforced by the validator script). layered-reachability supports happy-path + nacl-deny-egress + missing-vpc-endpoint + dns-disabled; three-tier-segmentation supports happy-path + cidr-instead-of-sg + nacl-stateless-return + missing-chain-link."
     },
     "ttl": {
       "type": "string",
