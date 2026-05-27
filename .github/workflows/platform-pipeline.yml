@@ -1,11 +1,12 @@
 name: platform-pipeline
 
 on:
+  # No top-level paths filter: the workflow must run on every PR so its
+  # required checks report a status. The `changes` job below uses
+  # dorny/paths-filter to decide whether the lint/plan/apply jobs actually
+  # execute; on PRs that don't touch platform/, those jobs skip cleanly,
+  # which GitHub counts as success for required checks.
   pull_request:
-    paths:
-      - 'platform/**'
-      - '.github/workflows/platform-pipeline.yml'
-      - '.github/scripts/blast-radius-check.sh'
 
 permissions:
   contents: read
@@ -25,8 +26,30 @@ env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
+  changes:
+    name: detect changed paths
+    # Cron and manual dispatch always run the full suite; PR runs use the
+    # path filter to skip docs-only / unrelated changes.
+    runs-on: ubuntu-latest
+    outputs:
+      platform: ${{ steps.filter.outputs.platform || (github.event_name != 'pull_request' && 'true') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            platform:
+              - 'platform/**'
+              - '.github/workflows/platform-pipeline.yml'
+              - '.github/scripts/blast-radius-check.sh'
+
   lint:
     name: fmt / validate / tflint / checkov
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +99,8 @@ jobs:
 
   plan:
     name: terraform plan
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
     runs-on: ubuntu-latest
     environment: terraform-plan
     steps:
@@ -160,7 +185,8 @@ jobs:
 
   apply:
     name: terraform apply
-    needs: [lint, plan]
+    needs: [changes, lint, plan]
+    if: needs.changes.outputs.platform == 'true'
     runs-on: ubuntu-latest
     environment: terraform-apply
     steps:
