@@ -35,7 +35,6 @@ locals {
     AutoDelete = var.ttl_iso
     Lab        = "layered-reachability"
     Scenario   = var.scenario
-    Terratest  = "false"
   }
 
   # Per-scenario toggles. Each fault scenario flips exactly one layer so

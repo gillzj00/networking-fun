@@ -229,6 +229,15 @@ pip install pyyaml jsonschema
 python3 .github/scripts/validate-manifest.py --manifest .platform/manifest.yaml
 ```
 
+## Integration tests
+
+Slice 9 ([`tests/`](../tests/README.md)) runs a Terratest integration test
+against `labs/modules/layered-reachability/` — it applies the module, asserts
+the VPC/subnet/endpoint shape and that no IGW is attached, then destroys. All
+test resources are tagged `Workload=terratest` (covered by the $5 budget) and
+`AutoDelete=<now+1h>` (swept by the janitor on failure). Run it locally with
+`make -C tests vpc` once `STATE_BUCKET` and AWS credentials are exported.
+
 ## Prerequisites for live runs
 
 The workflows reuse the slice-3 GitOps plumbing. Before the lab workflows can
