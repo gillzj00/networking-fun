@@ -97,8 +97,11 @@ jobs:
 
   vpc:
     name: VPC module integration test (Terratest)
-    needs: changes
-    if: needs.changes.outputs.vpc == 'true' && (github.event_name != 'pull_request' || github.actor == 'gillzj00')
+    # Depend on scenario so the vpc integration test never competes for
+    # the 5-VPC regional cap while the scenario matrix is in flight.
+    # `if: always()` lets vpc run even if scenarios failed/cancelled.
+    needs: [changes, scenario]
+    if: always() && needs.changes.outputs.vpc == 'true' && (github.event_name != 'pull_request' || github.actor == 'gillzj00')
     runs-on: ubuntu-latest
     environment: lab
     timeout-minutes: 50
@@ -132,7 +135,11 @@ jobs:
     environment: lab
     timeout-minutes: 50
     strategy:
-      fail-fast: false
+      # Fail-fast cancels sibling scenarios on the first failure so we
+      # surface a broken matrix quickly during iteration. The trade-off
+      # is losing parallel diagnostic signal; flip back to false when
+      # mapping a new wave of failures.
+      fail-fast: true
       # AWS default VPC cap is 5/region. Each scenario creates 1 VPC and
       # the vpc integration job can run concurrently with another VPC, so
       # capping parallelism at 2 keeps peak usage under the limit even
