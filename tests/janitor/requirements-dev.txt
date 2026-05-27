@@ -1,0 +1,4 @@
+pytest==8.3.4
+# boto3 is imported by platform/janitor/src/handler.py at module load. Any
+# version works for unit tests because every boto3.client call is patched.
+boto3>=1.35,<2
