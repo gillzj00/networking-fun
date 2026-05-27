@@ -1,0 +1,209 @@
+name: lab-provision
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - '.platform/manifest.yaml'
+      - 'labs/**'
+      - '.github/workflows/lab-provision.yml'
+      - '.github/scripts/validate-manifest.py'
+      - '.platform/manifest.schema.json'
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+defaults:
+  run:
+    working-directory: labs/runtime
+
+env:
+  TERRAFORM_VERSION: 1.10.5
+
+jobs:
+  guard:
+    name: actor + manifest guard
+    runs-on: ubuntu-latest
+    outputs:
+      manifest_present: ${{ steps.exists.outputs.present }}
+      lab: ${{ steps.validate.outputs.lab }}
+      scenario: ${{ steps.validate.outputs.scenario }}
+      ttl: ${{ steps.validate.outputs.ttl }}
+      ttl_seconds: ${{ steps.validate.outputs.ttl_seconds }}
+      ttl_iso: ${{ steps.validate.outputs.ttl_iso }}
+      notes: ${{ steps.validate.outputs.notes }}
+    steps:
+      - name: skip if actor is not the owner
+        if: github.actor != 'gillzj00'
+        run: |
+          echo "actor=${{ github.actor }} is not the owner; refusing to provision."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: manifest present?
+        id: exists
+        working-directory: .
+        run: |
+          if [[ -f .platform/manifest.yaml ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "no .platform/manifest.yaml on this branch; nothing to provision."
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.exists.outputs.present == 'true'
+        with:
+          python-version: '3.12'
+
+      - name: install dependencies
+        if: steps.exists.outputs.present == 'true'
+        working-directory: .
+        run: pip install --quiet pyyaml jsonschema
+
+      - name: validate manifest
+        id: validate
+        if: steps.exists.outputs.present == 'true'
+        working-directory: .
+        run: python3 .github/scripts/validate-manifest.py
+
+  apply:
+    name: terraform apply
+    needs: guard
+    if: needs.guard.outputs.manifest_present == 'true'
+    runs-on: ubuntu-latest
+    environment: lab
+    outputs:
+      instance_id: ${{ steps.outputs.outputs.instance_id }}
+      probe_function_name: ${{ steps.outputs.outputs.probe_function_name }}
+      probe_log_group: ${{ steps.outputs.outputs.probe_log_group }}
+      flow_log_group: ${{ steps.outputs.outputs.flow_log_group }}
+      vpc_id: ${{ steps.outputs.outputs.vpc_id }}
+      region: ${{ steps.outputs.outputs.region }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-lab-provision-pr-${{ github.event.pull_request.number }}
+
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
+            -backend-config="key=labs/${{ github.event.pull_request.number }}/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+
+      - name: terraform apply
+        run: |
+          terraform apply -auto-approve -no-color -input=false -lock-timeout=5m \
+            -var "pr_number=${{ github.event.pull_request.number }}" \
+            -var "lab=${{ needs.guard.outputs.lab }}" \
+            -var "scenario=${{ needs.guard.outputs.scenario }}" \
+            -var "ttl_iso=${{ needs.guard.outputs.ttl_iso }}" \
+            -var "region=${{ vars.AWS_REGION }}"
+
+      - name: collect outputs
+        id: outputs
+        run: |
+          terraform output -json > tfout.json
+          {
+            echo "instance_id=$(jq -r .instance_id.value tfout.json)"
+            echo "probe_function_name=$(jq -r .probe_function_name.value tfout.json)"
+            echo "probe_log_group=$(jq -r .probe_log_group.value tfout.json)"
+            echo "flow_log_group=$(jq -r .flow_log_group.value tfout.json)"
+            echo "vpc_id=$(jq -r .vpc_id.value tfout.json)"
+            echo "region=$(jq -r .region.value tfout.json)"
+          } >> "$GITHUB_OUTPUT"
+
+  probe:
+    name: invoke probe
+    needs: [guard, apply]
+    runs-on: ubuntu-latest
+    environment: lab
+    outputs:
+      probe_json: ${{ steps.invoke.outputs.probe_json }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-lab-probe-pr-${{ github.event.pull_request.number }}
+
+      - name: wait for SSM registration
+        id: wait
+        working-directory: .
+        run: |
+          for attempt in $(seq 1 30); do
+            status=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=${{ needs.apply.outputs.instance_id }}" \
+              --query 'InstanceInformationList[0].PingStatus' \
+              --output text 2>/dev/null || echo "MISSING")
+            echo "attempt=$attempt status=$status"
+            if [[ "$status" == "Online" ]]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "instance never reached Online" >&2
+          exit 1
+
+      - name: invoke probe
+        id: invoke
+        working-directory: .
+        run: |
+          aws lambda invoke \
+            --function-name "${{ needs.apply.outputs.probe_function_name }}" \
+            --invocation-type RequestResponse \
+            --log-type Tail \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{}' \
+            probe-out.json > probe-meta.json
+          payload=$(cat probe-out.json)
+          {
+            echo 'probe_json<<PROBE_EOF'
+            echo "$payload"
+            echo 'PROBE_EOF'
+          } >> "$GITHUB_OUTPUT"
+          echo "$payload" | jq .
+
+  comment:
+    name: post PR comment
+    needs: [guard, apply, probe]
+    if: always() && needs.guard.outputs.manifest_present == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: render and post comment
+        uses: actions/github-script@v7
+        env:
+          PROBE_JSON: ${{ needs.probe.outputs.probe_json }}
+          STATUS: ${{ needs.probe.result == 'success' && 'ready' || (needs.apply.result == 'success' && 'probe-failed' || 'provision-failed') }}
+          LAB: ${{ needs.guard.outputs.lab }}
+          SCENARIO: ${{ needs.guard.outputs.scenario }}
+          TTL: ${{ needs.guard.outputs.ttl }}
+          TTL_ISO: ${{ needs.guard.outputs.ttl_iso }}
+          NOTES: ${{ needs.guard.outputs.notes }}
+          INSTANCE_ID: ${{ needs.apply.outputs.instance_id }}
+          VPC_ID: ${{ needs.apply.outputs.vpc_id }}
+          REGION: ${{ needs.apply.outputs.region }}
+          PROBE_LOG_GROUP: ${{ needs.apply.outputs.probe_log_group }}
+          FLOW_LOG_GROUP: ${{ needs.apply.outputs.flow_log_group }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const script = require('./.github/scripts/render-lab-comment.js');
+            await script({github, context, core});

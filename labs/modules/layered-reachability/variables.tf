@@ -1,0 +1,54 @@
+variable "pr_number" {
+  description = "Pull request number that owns this lab environment. Used in resource names and the Env tag."
+  type        = number
+
+  validation {
+    condition     = var.pr_number > 0
+    error_message = "pr_number must be a positive integer."
+  }
+}
+
+variable "ttl_iso" {
+  description = "ISO 8601 UTC timestamp (e.g. 2026-05-26T14:00:00Z) used as the AutoDelete tag. The janitor Lambda destroys resources past this time."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.ttl_iso))
+    error_message = "ttl_iso must look like 2026-05-26T14:00:00Z."
+  }
+}
+
+variable "scenario" {
+  description = "Fault scenario name. v1 supports only happy-path; slice 8 expands the enum."
+  type        = string
+  default     = "happy-path"
+
+  validation {
+    condition     = contains(["happy-path"], var.scenario)
+    error_message = "scenario must be one of: happy-path."
+  }
+}
+
+variable "vpc_cidr" {
+  description = "CIDR for the lab VPC."
+  type        = string
+  default     = "10.20.0.0/24"
+}
+
+variable "private_subnet_cidr" {
+  description = "CIDR for the private subnet inside the lab VPC."
+  type        = string
+  default     = "10.20.0.0/27"
+}
+
+variable "instance_type" {
+  description = "EC2 instance type for the lab compute. Default t4g.nano (Graviton, ~$0.0042/hr)."
+  type        = string
+  default     = "t4g.nano"
+}
+
+variable "flow_log_retention_days" {
+  description = "Retention for the VPC Flow Logs CloudWatch log group."
+  type        = number
+  default     = 1
+}

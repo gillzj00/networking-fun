@@ -1,0 +1,34 @@
+name: manifest-validate
+
+on:
+  pull_request:
+    paths:
+      - '.platform/manifest.yaml'
+      - '.platform/manifest.schema.json'
+      - '.github/scripts/validate-manifest.py'
+      - '.github/workflows/manifest-validate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate .platform/manifest.yaml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: install dependencies
+        run: pip install --quiet pyyaml jsonschema
+
+      - name: validate manifest
+        run: |
+          if [[ ! -f .platform/manifest.yaml ]]; then
+            echo "no .platform/manifest.yaml on this branch; nothing to validate"
+            exit 0
+          fi
+          python3 .github/scripts/validate-manifest.py
