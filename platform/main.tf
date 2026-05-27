@@ -1,7 +1,7 @@
 terraform {
   # Backend config supplied at init time via -backend-config flags or
   # backend.hcl, so the account ID stays out of version control. See
-  # platform/README.md and the platform-apply / platform-plan workflows.
+  # platform/README.md and the platform-pipeline workflow.
   backend "s3" {}
 }
 

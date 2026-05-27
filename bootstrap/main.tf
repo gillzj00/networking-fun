@@ -120,8 +120,8 @@ data "aws_iam_policy_document" "gha_trust" {
       variable = "token.actions.githubusercontent.com:sub"
       values = [
         "repo:${var.github_repo}:ref:refs/heads/main",
-        "repo:${var.github_repo}:environment:production",
         "repo:${var.github_repo}:environment:terraform-plan",
+        "repo:${var.github_repo}:environment:terraform-apply",
         "repo:${var.github_repo}:environment:lab",
       ]
     }

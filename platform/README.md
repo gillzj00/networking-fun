@@ -67,29 +67,34 @@ GitHub Actions does it, authenticated via OIDC.
 
 | Event | Workflow | Effect |
 |---|---|---|
-| PR opened / pushed, touches `platform/**` | [`.github/workflows/platform-plan.yml`](../.github/workflows/platform-plan.yml) | `fmt -check`, `tflint`, `checkov`, `terraform plan`; plan posted as a sticky PR comment; blast-radius check fails the PR if it touches bootstrap-owned resources |
-| Push to `main` touches `platform/**` | [`.github/workflows/platform-apply.yml`](../.github/workflows/platform-apply.yml) | `terraform apply -auto-approve` |
+| PR opened / pushed, touches `platform/**` | [`.github/workflows/platform-pipeline.yml`](../.github/workflows/platform-pipeline.yml) | Single pipeline: `lint` (`fmt -check`, `validate`, `tflint`, `checkov`) + `plan` (`terraform plan -out=tfplan`, blast-radius check, sticky PR comment, plan uploaded as artifact) + `apply` (downloads the same `tfplan` artifact and runs `terraform apply tfplan` — no re-plan — gated by manual approval on the `terraform-apply` environment). |
 
-Both workflows assume the `gha-terraform` role (created by [`bootstrap/`](../bootstrap/)) via OIDC.
+The pipeline assumes the `gha-terraform` role (created by [`bootstrap/`](../bootstrap/)) via OIDC.
 
-### Why the plan workflow needs an environment approval
+### Why the plan and apply jobs both need environment approvals
 
-The `gha-terraform` trust policy is restricted (F-01) to two GitHub OIDC
-subject patterns: `ref:refs/heads/main` and `environment:<protected env>`.
-That keeps fork PRs from silently obtaining Admin in the dev account.
+The `gha-terraform` trust policy is restricted (F-01) to a small list of
+GitHub OIDC subject patterns: `ref:refs/heads/main` and
+`environment:<protected env>`. That keeps fork PRs from silently obtaining
+Admin in the dev account.
 
-To allow PR plans to read state, the plan workflow targets a dedicated
-GitHub environment named `terraform-plan`. The environment is configured
-with **required-reviewer = @gillzj00**, so every PR plan run waits for one
-explicit approval click in the GH UI before the role is assumed. This is
-the same gate F-01 applies to production applies, just on a per-plan basis.
+- The `plan` job targets the `terraform-plan` environment so PR plans can
+  read state. One approval click per PR is required before the role is
+  assumed and the plan runs.
+- The `apply` job targets the `terraform-apply` environment so applies
+  cannot start until a second approval click happens — and the approval
+  happens **after** the reviewer has read the plan sticky comment.
+  Because the apply consumes the `tfplan` artifact (no re-plan), what
+  shows in the PR comment is exactly what runs when you approve.
 
-Required prerequisite (one-time, per fork):
+Required prerequisites (one-time, per fork):
 
 1. Repo settings → Environments → create `terraform-plan` with
    required-reviewer `@gillzj00` and "all branches" deployment policy.
-2. Re-apply `bootstrap/` so the trust policy picks up the new
-   `environment:terraform-plan` subject.
+2. Repo settings → Environments → create `terraform-apply` with
+   required-reviewer `@gillzj00` and "all branches" deployment policy.
+3. Re-apply `bootstrap/` so the trust policy picks up the
+   `environment:terraform-apply` subject.
 
 Required GitHub Actions variables (`Settings → Secrets and variables → Actions → Variables`):
 
