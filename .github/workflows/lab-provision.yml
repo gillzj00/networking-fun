@@ -78,6 +78,7 @@ jobs:
     environment: lab
     outputs:
       instance_id: ${{ steps.outputs.outputs.instance_id }}
+      instance_ids_json: ${{ steps.outputs.outputs.instance_ids_json }}
       probe_function_name: ${{ steps.outputs.outputs.probe_function_name }}
       probe_log_group: ${{ steps.outputs.outputs.probe_log_group }}
       flow_log_group: ${{ steps.outputs.outputs.flow_log_group }}
@@ -121,6 +122,7 @@ jobs:
           terraform output -json > tfout.json
           {
             echo "instance_id=$(jq -r .instance_id.value tfout.json)"
+            echo "instance_ids_json=$(jq -c .instance_ids.value tfout.json)"
             echo "probe_function_name=$(jq -r .probe_function_name.value tfout.json)"
             echo "probe_log_group=$(jq -r .probe_log_group.value tfout.json)"
             echo "flow_log_group=$(jq -r .flow_log_group.value tfout.json)"
@@ -146,20 +148,35 @@ jobs:
         id: wait
         if: needs.guard.outputs.scenario == 'happy-path'
         working-directory: .
+        env:
+          LAB: ${{ needs.guard.outputs.lab }}
+          SINGLE_INSTANCE_ID: ${{ needs.apply.outputs.instance_id }}
+          INSTANCE_IDS_JSON: ${{ needs.apply.outputs.instance_ids_json }}
         run: |
-          for attempt in $(seq 1 30); do
-            status=$(aws ssm describe-instance-information \
-              --filters "Key=InstanceIds,Values=${{ needs.apply.outputs.instance_id }}" \
-              --query 'InstanceInformationList[0].PingStatus' \
-              --output text 2>/dev/null || echo "MISSING")
-            echo "attempt=$attempt status=$status"
-            if [[ "$status" == "Online" ]]; then
-              exit 0
-            fi
-            sleep 10
+          set -euo pipefail
+          if [[ "$LAB" == "three-tier-segmentation" ]]; then
+            mapfile -t ids < <(echo "$INSTANCE_IDS_JSON" | jq -r '.[]')
+          else
+            ids=("$SINGLE_INSTANCE_ID")
+          fi
+          echo "waiting on ${#ids[@]} instance(s): ${ids[*]}"
+          for id in "${ids[@]}"; do
+            for attempt in $(seq 1 30); do
+              status=$(aws ssm describe-instance-information \
+                --filters "Key=InstanceIds,Values=$id" \
+                --query 'InstanceInformationList[0].PingStatus' \
+                --output text 2>/dev/null || echo "MISSING")
+              echo "id=$id attempt=$attempt status=$status"
+              if [[ "$status" == "Online" ]]; then
+                break
+              fi
+              if [[ "$attempt" == "30" ]]; then
+                echo "instance $id never reached Online" >&2
+                exit 1
+              fi
+              sleep 10
+            done
           done
-          echo "instance never reached Online" >&2
-          exit 1
 
       - name: settle non-happy-path scenarios
         if: needs.guard.outputs.scenario != 'happy-path'
@@ -210,6 +227,7 @@ jobs:
           TTL_ISO: ${{ needs.guard.outputs.ttl_iso }}
           NOTES: ${{ needs.guard.outputs.notes }}
           INSTANCE_ID: ${{ needs.apply.outputs.instance_id }}
+          INSTANCE_IDS_JSON: ${{ needs.apply.outputs.instance_ids_json }}
           VPC_ID: ${{ needs.apply.outputs.vpc_id }}
           REGION: ${{ needs.apply.outputs.region }}
           PROBE_LOG_GROUP: ${{ needs.apply.outputs.probe_log_group }}

@@ -10,9 +10,10 @@ Lambda from the platform layer.
 ```
 labs/
 ├── modules/
-│   ├── layered-reachability/   # Lab #1: private VPC + SSM-attached EC2
-│   └── probe/                  # Lambda probe shared by all labs
-└── runtime/                    # Per-PR root module (state at labs/<pr>/terraform.tfstate)
+│   ├── layered-reachability/      # Lab #1: private VPC + SSM-attached EC2
+│   ├── three-tier-segmentation/   # Lab #2: web/app/db chained SGs
+│   └── probe/                     # Lambda probe shared by all labs
+└── runtime/                       # Per-PR root module (state at labs/<pr>/terraform.tfstate)
 ```
 
 The `labs/runtime/` root is the only thing the workflows apply. It composes
@@ -33,16 +34,23 @@ notes: "Smoke test for Lab #1 happy path"
 
 The fields:
 
-| field | required | enum (v1) | notes |
+| field | required | enum | notes |
 |---|---|---|---|
-| `lab` | yes | `layered-reachability` | Slice 11 adds `three-tier-segmentation`. |
-| `scenario` | yes | `happy-path`, `nacl-deny-egress`, `missing-vpc-endpoint`, `dns-disabled` | One baseline + three fault scenarios. The probe matrix is the success criterion: a fault scenario "passes" when each check matches its scenario-specific expectation. |
+| `lab` | yes | `layered-reachability`, `three-tier-segmentation` | Drives module dispatch in `labs/runtime/`. |
+| `scenario` | yes | see per-lab whitelist below | Validator rejects scenarios not in the chosen lab's whitelist. The probe matrix is the success criterion: a fault scenario "passes" when each check matches its scenario-specific expectation. |
 | `ttl` | no (default `4h`) | `<int><s\|m\|h>` | Capped at 4h. Janitor Lambda destroys on `AutoDelete=<ttl-iso>`. |
 | `notes` | no | free text | Rendered in the PR comment. |
 
-The validator (`.github/scripts/validate-manifest.py`) runs in CI before any
-AWS call. Bad lab, bad scenario, missing field, or `ttl > 4h` fail the PR
-before Terraform is invoked.
+Per-lab scenario whitelist (enforced by `.github/scripts/validate-manifest.py`):
+
+| lab | allowed scenarios |
+|---|---|
+| `layered-reachability` | `happy-path`, `nacl-deny-egress`, `missing-vpc-endpoint`, `dns-disabled` |
+| `three-tier-segmentation` | `happy-path`, `cidr-instead-of-sg`, `nacl-stateless-return`, `missing-chain-link` |
+
+The validator runs in CI before any AWS call. Bad lab, scenario not valid
+for the lab, missing field, or `ttl > 4h` all fail the PR before Terraform
+is invoked.
 
 ## PR lifecycle
 
@@ -158,7 +166,49 @@ hostnames.
 | `ssm_api_reachable` | fail | boto3 can't resolve the endpoint hostname |
 | `instance_registered_with_ssm` | fail | same |
 
-### Lab #2: `three-tier-segmentation` — slice 11 (#12)
+### Lab #2: `three-tier-segmentation`
+
+Three private subnets — `web`, `app`, `db` — each with one SSM-attached
+`t4g.nano`. The three SGs are chained by reference:
+
+- `web-sg` accepts `tcp/443` from `0.0.0.0/0` (simulated ALB ingress).
+- `app-sg` accepts `tcp/8080` from `web-sg` (chained).
+- `db-sg` accepts `tcp/5432` from `app-sg` (chained).
+
+Every tier SG has egress to the SSM endpoint SG on 443 (so the agent
+works) and to every other tier SG on the destination tier's service
+port (so failures in the probe matrix never reflect a same-side egress
+restriction). All three subnets share one route table; no IGW, no NAT;
+three SSM family interface endpoints provide control-plane reachability.
+
+The probe Lambda calls `ssm:SendCommand` against each tier's instance
+to run `nc -zv -w 5 <peer-ip> <peer-port>`. The result is a 3×3
+connectivity matrix (web/app/db each as source × destination). The PR
+comment renders the matrix as a grid, with `*` marking any cell whose
+actual result didn't match the per-scenario expectation.
+
+#### Scenarios
+
+| scenario | what it changes | the lesson |
+|---|---|---|
+| `happy-path` | nothing — baseline | Chained SG references confine traffic to web→app→db. |
+| `cidr-instead-of-sg` | `db-sg` allows the VPC CIDR on `5432` instead of `app-sg`. | Reaching for CIDR-based SG rules widens blast radius; web now also reaches db. |
+| `nacl-stateless-return` | Custom NACL on the db subnet: ingress allow-all, egress allows 443/5432/8080 but DENIES tcp 32768–60999. | NACLs are stateless: SG approves `app→db:5432` (SYN reaches db), NACL drops the return SYN-ACK to app's ephemeral port. |
+| `missing-chain-link` | `app-sg` omits the 8080 ingress rule from `web-sg`. | One missing hop breaks the chain; web can't reach app even though every other piece is right. |
+
+Expected probe matrix (passing cells in **bold**):
+
+| scenario | web→app | web→db | app→web | app→db | db→web | db→app |
+|---|---|---|---|---|---|---|
+| `happy-path` | **pass** | fail | **pass** | **pass** | **pass** | fail |
+| `cidr-instead-of-sg` | **pass** | **pass** | **pass** | **pass** | **pass** | fail |
+| `nacl-stateless-return` | **pass** | fail | **pass** | fail | **pass** | fail |
+| `missing-chain-link` | fail | fail | **pass** | **pass** | **pass** | fail |
+
+The `app→web` and `db→web` rows pass in every scenario because `web-sg`
+allows `tcp/443` from `0.0.0.0/0` — the takeaway is that an overly
+broad inbound rule on the web tier swallows what would otherwise be
+useful negative signal.
 
 ## Running locally
 
