@@ -231,12 +231,18 @@ python3 .github/scripts/validate-manifest.py --manifest .platform/manifest.yaml
 
 ## Integration tests
 
-Slice 9 ([`tests/`](../tests/README.md)) runs a Terratest integration test
-against `labs/modules/layered-reachability/` — it applies the module, asserts
-the VPC/subnet/endpoint shape and that no IGW is attached, then destroys. All
-test resources are tagged `Workload=terratest` (covered by the $5 budget) and
-`AutoDelete=<now+1h>` (swept by the janitor on failure). Run it locally with
-`make -C tests vpc` once `STATE_BUCKET` and AWS credentials are exported.
+[`tests/`](../tests/README.md) covers both lab modules end-to-end:
+
+| Test | What it asserts | Cost | Runtime |
+|---|---|---|---|
+| `tests/vpc/` | `layered-reachability` static shape: no IGW, 3 endpoints, instance state. | ~$0.01 | ~5 min |
+| `tests/lab1/` | Lab #1 happy-path + `nacl-deny-egress`: provision, probe Lambda, assert matrix matches `LAYERED_EXPECTED`. | ~$0.04 | ~20 min |
+| `tests/lab2/` | Lab #2 happy-path + `nacl-stateless-return`: provision, probe Lambda (SSM RunCommand), assert 3×3 matrix matches `THREE_TIER_EXPECTED`. | ~$0.06 | ~20 min |
+
+All test resources are tagged `Workload=terratest` (covered by the $5
+budget) and `AutoDelete=<now+1h>` (swept by the janitor on failure).
+Run any of them locally with `make -C tests {vpc,lab1,lab2}` once
+`STATE_BUCKET` and AWS credentials are exported.
 
 ## Prerequisites for live runs
 
