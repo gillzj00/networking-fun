@@ -36,6 +36,8 @@ jobs:
     outputs:
       janitor: ${{ steps.filter.outputs.janitor || (github.event_name != 'pull_request' && 'true') }}
       vpc: ${{ steps.filter.outputs.vpc || (github.event_name != 'pull_request' && 'true') }}
+      lab1: ${{ steps.filter.outputs.lab1 || (github.event_name != 'pull_request' && 'true') }}
+      lab2: ${{ steps.filter.outputs.lab2 || (github.event_name != 'pull_request' && 'true') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -52,6 +54,20 @@ jobs:
             vpc:
               - 'labs/modules/layered-reachability/**'
               - 'tests/vpc/**'
+              - 'tests/helpers/**'
+              - 'tests/go.mod'
+              - '.github/workflows/terratest.yml'
+            lab1:
+              - 'labs/modules/layered-reachability/**'
+              - 'labs/modules/probe/**'
+              - 'tests/lab1/**'
+              - 'tests/helpers/**'
+              - 'tests/go.mod'
+              - '.github/workflows/terratest.yml'
+            lab2:
+              - 'labs/modules/three-tier-segmentation/**'
+              - 'labs/modules/probe/**'
+              - 'tests/lab2/**'
               - 'tests/helpers/**'
               - 'tests/go.mod'
               - '.github/workflows/terratest.yml'
@@ -110,9 +126,75 @@ jobs:
           AWS_REGION: ${{ vars.AWS_REGION }}
         run: go test ./vpc/... -v -timeout 25m
 
+  lab1:
+    name: Lab #1 end-to-end (happy + nacl-deny-egress)
+    needs: changes
+    if: needs.changes.outputs.lab1 == 'true' && (github.event_name != 'pull_request' || github.actor == 'gillzj00')
+    runs-on: ubuntu-latest
+    environment: lab
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: tests/go.sum
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-terratest-lab1-${{ github.run_id }}
+
+      - name: go test
+        working-directory: tests
+        env:
+          TERRATEST_STATE_BUCKET: ${{ vars.TFSTATE_BUCKET }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: go test ./lab1/... -v -timeout 30m -parallel 2
+
+  lab2:
+    name: Lab #2 end-to-end (happy + nacl-stateless-return)
+    needs: changes
+    if: needs.changes.outputs.lab2 == 'true' && (github.event_name != 'pull_request' || github.actor == 'gillzj00')
+    runs-on: ubuntu-latest
+    environment: lab
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: tests/go.sum
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-terratest-lab2-${{ github.run_id }}
+
+      - name: go test
+        working-directory: tests
+        env:
+          TERRATEST_STATE_BUCKET: ${{ vars.TFSTATE_BUCKET }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: go test ./lab2/... -v -timeout 30m -parallel 2
+
   summary:
     name: PR comment summary
-    needs: [changes, janitor, vpc]
+    needs: [changes, janitor, vpc, lab1, lab2]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -120,8 +202,12 @@ jobs:
         env:
           JANITOR_NEEDED: ${{ needs.changes.outputs.janitor }}
           VPC_NEEDED: ${{ needs.changes.outputs.vpc }}
+          LAB1_NEEDED: ${{ needs.changes.outputs.lab1 }}
+          LAB2_NEEDED: ${{ needs.changes.outputs.lab2 }}
           JANITOR_RESULT: ${{ needs.janitor.result }}
           VPC_RESULT: ${{ needs.vpc.result }}
+          LAB1_RESULT: ${{ needs.lab1.result }}
+          LAB2_RESULT: ${{ needs.lab2.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
@@ -140,6 +226,8 @@ jobs:
               `| --- | --- |`,
               `| janitor unit | ${fmt(process.env.JANITOR_NEEDED, process.env.JANITOR_RESULT)} |`,
               `| vpc integration | ${fmt(process.env.VPC_NEEDED, process.env.VPC_RESULT)} |`,
+              `| lab #1 end-to-end | ${fmt(process.env.LAB1_NEEDED, process.env.LAB1_RESULT)} |`,
+              `| lab #2 end-to-end | ${fmt(process.env.LAB2_NEEDED, process.env.LAB2_RESULT)} |`,
               '',
               `[run details](${process.env.RUN_URL})`,
             ].join('\n');
