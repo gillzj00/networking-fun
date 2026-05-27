@@ -44,8 +44,9 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v4
-
+    # Note: this composite action is referenced via local path, so callers
+    # must run actions/checkout@v4 before invoking it. Checkout is kept out
+    # of the composite to avoid a redundant second clone in every job.
     - uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: ${{ inputs.terraform-version }}
