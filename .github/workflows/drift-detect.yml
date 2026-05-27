@@ -1,0 +1,99 @@
+name: drift-detect
+
+on:
+  schedule:
+    # 08:00 UTC ≈ 01:00 PT (00:00 PST / 01:00 PDT)
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: drift-detect
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: platform
+
+env:
+  TERRAFORM_VERSION: 1.10.5
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+  DRIFT_MARKER: '<!-- drift-detect:platform -->'
+
+jobs:
+  drift:
+    name: terraform plan -detailed-exitcode
+    runs-on: ubuntu-latest
+    environment: terraform-plan
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: prime terraform plugin cache dir
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+      - name: cache terraform providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: tf-plugins-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-${{ hashFiles('platform/.terraform.lock.hcl') }}
+          restore-keys: |
+            tf-plugins-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-platform-drift-${{ github.run_id }}
+
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
+            -backend-config="key=platform/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+
+      - name: terraform plan -detailed-exitcode
+        id: plan
+        run: |
+          set +e
+          terraform plan -no-color -input=false -lock-timeout=5m \
+            -detailed-exitcode -out=drift.tfplan
+          code=$?
+          set -e
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) echo "result=no-drift" >> "$GITHUB_OUTPUT" ;;
+            2) echo "result=drift"    >> "$GITHUB_OUTPUT" ;;
+            *) echo "result=error"    >> "$GITHUB_OUTPUT"; exit "$code" ;;
+          esac
+
+      - name: render plan to text
+        if: steps.plan.outputs.result == 'drift'
+        run: terraform show -no-color drift.tfplan > drift.txt
+
+      - name: open or update drift issue
+        if: steps.plan.outputs.result == 'drift'
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/drift-issue.sh open platform/drift.txt
+
+      - name: close stale drift issue
+        if: steps.plan.outputs.result == 'no-drift'
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/drift-issue.sh close
