@@ -81,6 +81,12 @@ func TestLayeredReachabilityVPC(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rtOut.RouteTables, 1, "subnet must be associated with exactly one route table")
 	for _, route := range rtOut.RouteTables[0].Routes {
+		// Every route table has an implicit "local" route for the VPC CIDR;
+		// AWS reports it with GatewayId="local". Skip it — we only care that
+		// the user hasn't added an IGW/NAT route.
+		if aws.StringValue(route.GatewayId) == "local" {
+			continue
+		}
 		assert.Nil(t, route.GatewayId, "private subnet must not route to an IGW")
 		assert.Nil(t, route.NatGatewayId, "private subnet must not route to a NAT gateway")
 	}
