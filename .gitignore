@@ -42,6 +42,12 @@ override.tf.json
 tfplan
 *.tfplan
 
+# Lambda deployment artifacts produced by archive_file data sources
+platform/janitor.zip
+
+# Python bytecode caches from local handler.py compiles
+__pycache__/
+
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
