@@ -5,3 +5,6 @@ janitor_schedule_expression   = "rate(15 minutes)"
 janitor_log_retention_days    = 7
 monthly_budget_usd            = "25"
 terratest_budget_usd          = "5"
+labs_domain                   = "labs.gillzhub.com"
+# Flip to true only after the parent-zone NS delegation is in place. See platform/README.md.
+enable_acm_validation = false
