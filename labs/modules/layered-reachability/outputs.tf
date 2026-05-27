@@ -13,6 +13,11 @@ output "instance_security_group_id" {
   value       = aws_security_group.instance.id
 }
 
+output "endpoint_security_group_id" {
+  description = "Security group attached to the SSM family VPC endpoints. The probe Lambda attaches an egress rule to this SG so it can call SSM."
+  value       = aws_security_group.endpoints.id
+}
+
 output "instance_id" {
   description = "Lab EC2 instance ID. Use with: aws ssm start-session --target <id>"
   value       = aws_instance.lab.id
