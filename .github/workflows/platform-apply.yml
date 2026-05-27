@@ -1,0 +1,59 @@
+name: platform-apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'platform/**'
+      - '.github/workflows/platform-apply.yml'
+      - '.github/scripts/blast-radius-check.sh'
+
+permissions:
+  contents: read
+  id-token: write
+
+defaults:
+  run:
+    working-directory: platform
+
+env:
+  TERRAFORM_VERSION: 1.10.5
+
+jobs:
+  apply:
+    name: terraform apply
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-platform-apply-${{ github.run_id }}
+
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
+            -backend-config="key=platform/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+
+      - name: terraform plan
+        run: terraform plan -no-color -input=false -lock-timeout=5m -out=tfplan
+
+      - name: blast-radius check
+        run: |
+          terraform show -json tfplan > tfplan.json
+          ../.github/scripts/blast-radius-check.sh tfplan.json
+
+      - name: terraform apply
+        run: terraform apply -no-color -input=false -lock-timeout=5m tfplan

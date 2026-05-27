@@ -121,6 +121,7 @@ data "aws_iam_policy_document" "gha_trust" {
       values = [
         "repo:${var.github_repo}:ref:refs/heads/main",
         "repo:${var.github_repo}:environment:production",
+        "repo:${var.github_repo}:environment:terraform-plan",
       ]
     }
   }
