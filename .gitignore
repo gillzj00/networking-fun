@@ -49,6 +49,9 @@ labs/modules/probe/probe.zip
 # Python bytecode caches from local handler.py compiles
 __pycache__/
 
+# pytest cache from Terratest janitor unit tests
+.pytest_cache/
+
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
