@@ -34,7 +34,6 @@ locals {
     AutoDelete = var.ttl_iso
     Lab        = "layered-reachability"
     Scenario   = var.scenario
-    Terratest  = "false"
   }
 }
 
