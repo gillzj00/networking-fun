@@ -345,20 +345,21 @@ def _run_three_tier_segmentation() -> list[dict]:
 
             # The probe asks "is the network path open between these
             # tiers?", not "is a service listening on the destination
-            # port?". The tier instances are bare AL2023 with no
-            # listener bound, so a successful SG/NACL crossing returns
-            # TCP RST ("Connection refused") — which nc reports as exit
-            # 1, identical to a SG-blocked silent drop. Distinguish them
-            # on nc's stderr: RST is logged as "refused" (boundary
-            # crossed → passed), no response triggers nc's timeout (-w
-            # 5) and is logged as "timed out" or stays silent (boundary
-            # blocked → failed). exit 0 (full handshake) also counts as
-            # passed in case the lesson later adds a listener.
+            # port?". The tier instances are bare AL2023 — `nc`/`ncat`
+            # is not in the default image, but `bash` and `timeout` are.
+            # Use bash's built-in `/dev/tcp` to send a SYN, wrapped in
+            # `timeout 5` so a silently-dropped SYN comes back as exit
+            # 124 unambiguously.
+            #
+            # Decision:
+            #   exit 0   -> handshake completed (path open, listener present)
+            #   exit 124 -> timeout (SG/NACL silently dropped SYN -> blocked)
+            #   other    -> RST received (path open, no listener)  -> passed
             command = (
-                f"nc -zv -w 5 {dst_ip} {int(dst_port)} >/tmp/nc.out 2>&1; "
-                f"rc=$?; echo exit=$rc; cat /tmp/nc.out; "
-                f"if [ $rc -eq 0 ] || grep -qi refused /tmp/nc.out; then "
-                f"exit 0; else exit 1; fi"
+                f"timeout 5 bash -c '</dev/tcp/{dst_ip}/{int(dst_port)}' "
+                f">/tmp/tcp.out 2>&1; "
+                f"rc=$?; echo exit=$rc; cat /tmp/tcp.out; "
+                f"if [ $rc -eq 124 ]; then exit 1; else exit 0; fi"
             )
             passed, detail = _ssm_run(source_instance, command, timeout_s=30)
             results.append(
