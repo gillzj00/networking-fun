@@ -56,6 +56,7 @@ jobs:
               - 'tests/helpers/**'
               - 'tests/go.mod'
               - '.github/workflows/terratest.yml'
+              - '!**/*.md'
             lab1:
               - 'labs/modules/layered-reachability/**'
               - 'labs/modules/probe/**'
@@ -63,6 +64,7 @@ jobs:
               - 'tests/helpers/**'
               - 'tests/go.mod'
               - '.github/workflows/terratest.yml'
+              - '!**/*.md'
             lab2:
               - 'labs/modules/three-tier-segmentation/**'
               - 'labs/modules/probe/**'
@@ -70,6 +72,7 @@ jobs:
               - 'tests/helpers/**'
               - 'tests/go.mod'
               - '.github/workflows/terratest.yml'
+              - '!**/*.md'
 
   janitor:
     name: janitor unit test (Python)
@@ -130,6 +133,11 @@ jobs:
     timeout-minutes: 35
     strategy:
       fail-fast: false
+      # AWS default VPC cap is 5/region. Each scenario creates 1 VPC and
+      # the vpc integration job can run concurrently with another VPC, so
+      # capping parallelism at 2 keeps peak usage under the limit even
+      # with a default VPC and an in-flight cleanup race.
+      max-parallel: 2
       matrix:
         include:
           - scenario: lab1-happy-path
