@@ -62,47 +62,25 @@ budget will see real spend once the tag is activated.
 
 ## Trigger model
 
-This layer is GitOps. You do **not** run `terraform apply` from your laptop —
-GitHub Actions does it, authenticated via OIDC.
+GitOps via [`.github/workflows/platform-pipeline.yml`](../.github/workflows/platform-pipeline.yml).
+A PR touching `platform/**` runs a single pipeline: lint
+(`fmt -check`, `validate`, `tflint`, `checkov`) → plan
+(`terraform plan -out=tfplan`, blast-radius check, sticky PR comment, plan
+artifact) → apply (downloads the same `tfplan`, no re-plan). The pipeline
+assumes the `gha-terraform` role via OIDC.
 
-| Event | Workflow | Effect |
-|---|---|---|
-| PR opened / pushed, touches `platform/**` | [`.github/workflows/platform-pipeline.yml`](../.github/workflows/platform-pipeline.yml) | Single pipeline: `lint` (`fmt -check`, `validate`, `tflint`, `checkov`) + `plan` (`terraform plan -out=tfplan`, blast-radius check, sticky PR comment, plan uploaded as artifact) + `apply` (downloads the same `tfplan` artifact and runs `terraform apply tfplan` — no re-plan — gated by manual approval on the `terraform-apply` environment). |
+Two GitHub environments gate the role assumption: `terraform-plan` (one click
+to let the plan job read state) and `terraform-apply` (a second click *after*
+reviewing the plan comment, since apply consumes the artifact verbatim). This
+follows F-01 — the role's OIDC trust is restricted to
+`ref:refs/heads/main` plus specific `environment:*` subjects, so fork PRs
+can never silently assume admin.
 
-The pipeline assumes the `gha-terraform` role (created by [`bootstrap/`](../bootstrap/)) via OIDC.
-
-### Why the plan and apply jobs both need environment approvals
-
-The `gha-terraform` trust policy is restricted (F-01) to a small list of
-GitHub OIDC subject patterns: `ref:refs/heads/main` and
-`environment:<protected env>`. That keeps fork PRs from silently obtaining
-Admin in the dev account.
-
-- The `plan` job targets the `terraform-plan` environment so PR plans can
-  read state. One approval click per PR is required before the role is
-  assumed and the plan runs.
-- The `apply` job targets the `terraform-apply` environment so applies
-  cannot start until a second approval click happens — and the approval
-  happens **after** the reviewer has read the plan sticky comment.
-  Because the apply consumes the `tfplan` artifact (no re-plan), what
-  shows in the PR comment is exactly what runs when you approve.
-
-Required prerequisites (one-time, per fork):
-
-1. Repo settings → Environments → create `terraform-plan` with
-   required-reviewer `@gillzj00` and "all branches" deployment policy.
-2. Repo settings → Environments → create `terraform-apply` with
-   required-reviewer `@gillzj00` and "all branches" deployment policy.
-3. Re-apply `bootstrap/` so the trust policy picks up the
-   `environment:terraform-apply` subject.
-
-Required GitHub Actions variables (`Settings → Secrets and variables → Actions → Variables`):
-
-| Variable | Value |
-|---|---|
-| `AWS_REGION` | `us-east-2` |
-| `AWS_ROLE_ARN` | output `gha_role_arn` from `bootstrap/` |
-| `TFSTATE_BUCKET` | output `tfstate_bucket` from `bootstrap/` |
+**One-time fork setup:** create both environments with `@gillzj00` as
+required reviewer, then re-apply `bootstrap/` so the trust policy picks up
+the new `environment:*` subjects. Set Actions variables `AWS_REGION=us-east-2`,
+`AWS_ROLE_ARN` (= `gha_role_arn` output), `TFSTATE_BUCKET` (= `tfstate_bucket`
+output).
 
 ## Blast-radius safety rail
 
@@ -155,21 +133,14 @@ GitOps is the normal path. The IDC SSO admin role retains permission to
 run `terraform apply` from a laptop in genuine emergencies — see the PRD
 for the policy. Manual applies are an incident, not a workflow.
 
-## Local development
+## Local validation
 
-You should rarely need to run Terraform locally for this layer, but for
-debugging:
+For debugging only — do not apply from your laptop, the workflow does that.
 
 ```bash
-cp backend.hcl.example backend.hcl
-# Fill in your dev account ID
-
+cp backend.hcl.example backend.hcl              # fill in dev account ID
 cp terraform.tfvars.example terraform.tfvars
-# Adjust if needed
-
 export AWS_PROFILE=networking-fun-dev.NetworkingFunDevAdmin
 terraform init -backend-config=backend.hcl
 terraform plan
 ```
-
-Do not `terraform apply` from your laptop — let the workflow do it.
