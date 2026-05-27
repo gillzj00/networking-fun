@@ -1,0 +1,123 @@
+name: platform-plan
+
+on:
+  pull_request:
+    paths:
+      - 'platform/**'
+      - '.github/workflows/platform-plan.yml'
+      - '.github/scripts/blast-radius-check.sh'
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+defaults:
+  run:
+    working-directory: platform
+
+env:
+  TERRAFORM_VERSION: 1.10.5
+
+jobs:
+  lint:
+    name: fmt / validate / tflint / checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.55.1
+
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: checkov
+        run: |
+          pip install --quiet checkov
+          checkov --directory . --framework terraform --quiet --compact
+
+  plan:
+    name: terraform plan
+    needs: lint
+    runs-on: ubuntu-latest
+    environment: terraform-plan
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-platform-plan-${{ github.run_id }}
+
+      - name: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
+            -backend-config="key=platform/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+
+      - name: terraform plan
+        run: terraform plan -no-color -input=false -lock-timeout=5m -out=tfplan
+
+      - name: terraform show (json)
+        run: terraform show -json tfplan > tfplan.json
+
+      - name: blast-radius check
+        run: ../.github/scripts/blast-radius-check.sh tfplan.json
+
+      - name: terraform show (text)
+        id: planout
+        run: |
+          terraform show -no-color tfplan > tfplan.txt
+          {
+            echo 'plan<<TFPLAN_EOF'
+            head -c 60000 tfplan.txt
+            wc -c < tfplan.txt | awk '{ if ($1 > 60000) print "\n... (truncated, " $1 " bytes total)" }'
+            echo 'TFPLAN_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: platform-plan
+          message: |
+            ### platform/ — `terraform plan`
+
+            <details>
+            <summary>Plan output (click to expand)</summary>
+
+            ```hcl
+            ${{ steps.planout.outputs.plan }}
+            ```
+            </details>
+
+            _Blast-radius check: passed. Workflow run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})_
