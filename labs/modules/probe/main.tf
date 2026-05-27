@@ -61,6 +61,56 @@ data "aws_iam_policy_document" "probe" {
 
     resources = ["*"]
   }
+
+  # SSM RunCommand against tier instances for the three-tier
+  # connectivity matrix. ssm:GetCommandInvocation has no resource-level
+  # constraint, and ssm:SendCommand is constrained to the well-known
+  # shell-script document plus the per-PR tag scope below.
+  dynamic "statement" {
+    for_each = var.lab == "three-tier-segmentation" ? [1] : []
+    content {
+      sid    = "RunCommandOnLabInstances"
+      effect = "Allow"
+      actions = [
+        "ssm:SendCommand",
+      ]
+      resources = [
+        "arn:aws:ec2:*:*:instance/*",
+      ]
+      condition {
+        test     = "StringEquals"
+        variable = "aws:ResourceTag/Env"
+        values   = ["lab-pr-${var.pr_number}"]
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.lab == "three-tier-segmentation" ? [1] : []
+    content {
+      sid    = "RunCommandUseDocument"
+      effect = "Allow"
+      actions = [
+        "ssm:SendCommand",
+      ]
+      resources = [
+        "arn:aws:ssm:*::document/AWS-RunShellScript",
+      ]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.lab == "three-tier-segmentation" ? [1] : []
+    content {
+      sid    = "RunCommandReadResults"
+      effect = "Allow"
+      actions = [
+        "ssm:GetCommandInvocation",
+        "ssm:ListCommandInvocations",
+      ]
+      resources = ["*"]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "probe" {
@@ -122,20 +172,25 @@ resource "aws_lambda_function" "probe" {
   #checkov:skip=CKV_AWS_50:X-Ray adds runtime cost with no value for a connectivity probe.
   #checkov:skip=CKV_AWS_363:Runtime pinned to python3.12; AWS guarantees patching for managed runtimes.
   function_name    = local.name_prefix
-  description      = "Connectivity probe for the layered-reachability lab."
+  description      = "Connectivity probe for the lab; runs the per-lab matrix and returns structured results."
   role             = aws_iam_role.probe.arn
   runtime          = "python3.12"
   architectures    = ["arm64"]
   handler          = "handler.handler"
   filename         = data.archive_file.probe.output_path
   source_code_hash = data.archive_file.probe.output_base64sha256
-  timeout          = 30
-  memory_size      = 128
+  # 30s is enough for layered-reachability; three-tier fans out 6 SSM
+  # RunCommand invocations that each may wait up to ~7s for the agent
+  # to pick up and execute. 180s leaves slack without ballooning cost.
+  timeout     = 180
+  memory_size = 128
 
   environment {
     variables = {
       TARGET_INSTANCE_ID = var.target_instance_id
       SCENARIO           = var.scenario
+      LAB                = var.lab
+      TIER_TARGETS_JSON  = jsonencode(var.tier_targets)
     }
   }
 

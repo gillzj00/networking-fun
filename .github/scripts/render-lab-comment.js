@@ -42,6 +42,84 @@ function ttlCountdown(ttlIso) {
   return `~${parts.join(' ')} remaining (expires ${ttlIso})`;
 }
 
+function probeListMatrix(rows, matchedExpectation) {
+  const summary = matchedExpectation
+    ? 'all checks matched expectations'
+    : 'one or more checks did NOT match expectations';
+  const header = '| check | expected | actual | detail | ms |\n|---|---|---|---|---|';
+  const lines = rows.map((r) => {
+    const expected = r.expected ? 'pass' : 'fail';
+    const actual = r.passed ? 'pass' : 'fail';
+    const marker = r.matched_expectation ? '' : ' *';
+    const detail = String(r.detail || '').replace(/\|/g, '\\|');
+    return `| \`${r.name}\`${marker} | ${expected} | ${actual} | ${detail} | ${r.duration_ms} |`;
+  });
+  return `${header}\n${lines.join('\n')}\n\n_${summary}_`;
+}
+
+function probeGridMatrix(rows, matchedExpectation) {
+  const cells = new Map();
+  const tiers = [];
+  const seenTier = new Set();
+  for (const r of rows) {
+    if (!r.source || !r.destination || r.source === 'probe') continue;
+    for (const t of [r.source, r.destination]) {
+      if (!seenTier.has(t)) {
+        seenTier.add(t);
+        tiers.push(t);
+      }
+    }
+    cells.set(`${r.source}->${r.destination}`, r);
+  }
+  if (tiers.length === 0) return null;
+
+  const tierOrder = ['web', 'app', 'db'].filter((t) => seenTier.has(t));
+  for (const t of tiers) {
+    if (!tierOrder.includes(t)) tierOrder.push(t);
+  }
+
+  const headerCells = ['source ↓ \\ dest →', ...tierOrder.map((t) => `\`${t}\``)];
+  const sepCells = headerCells.map(() => '---');
+  const lines = [headerCells.join(' | '), sepCells.join(' | ')];
+  for (const src of tierOrder) {
+    const row = [`\`${src}\``];
+    for (const dst of tierOrder) {
+      if (src === dst) {
+        row.push('—');
+        continue;
+      }
+      const cell = cells.get(`${src}->${dst}`);
+      if (!cell) {
+        row.push('·');
+        continue;
+      }
+      const port = cell.port ? `:${cell.port}` : '';
+      const actual = cell.passed ? 'pass' : 'fail';
+      const marker = cell.matched_expectation ? '' : ' *';
+      row.push(`${actual}${port}${marker}`);
+    }
+    lines.push(row.join(' | '));
+  }
+
+  const details = rows
+    .filter((r) => r.source && r.source !== 'probe')
+    .map((r) => {
+      const expected = r.expected ? 'pass' : 'fail';
+      const actual = r.passed ? 'pass' : 'fail';
+      const marker = r.matched_expectation ? '' : ' *';
+      const detail = String(r.detail || '').replace(/\|/g, '\\|');
+      return `| \`${r.name}\`${marker} | ${expected} | ${actual} | ${detail} | ${r.duration_ms} |`;
+    });
+  const detailTable = details.length
+    ? `\n\n<details><summary>per-path detail</summary>\n\n| path | expected | actual | detail | ms |\n|---|---|---|---|---|\n${details.join('\n')}\n\n</details>`
+    : '';
+
+  const summary = matchedExpectation
+    ? 'all paths matched expectations'
+    : 'one or more paths did NOT match expectations (marked `*`)';
+  return `${lines.join('\n')}\n\n_${summary}_${detailTable}`;
+}
+
 function probeMatrix(probeJsonRaw) {
   if (!probeJsonRaw) {
     return '_probe was not invoked_';
@@ -56,18 +134,14 @@ function probeMatrix(probeJsonRaw) {
   if (rows.length === 0) {
     return '_probe returned no checks_';
   }
-  const summary = parsed.matched_expectation
-    ? 'all checks matched expectations'
-    : 'one or more checks did NOT match expectations';
-  const header = '| check | expected | actual | detail | ms |\n|---|---|---|---|---|';
-  const lines = rows.map((r) => {
-    const expected = r.expected ? 'pass' : 'fail';
-    const actual = r.passed ? 'pass' : 'fail';
-    const marker = r.matched_expectation ? '' : ' *';
-    const detail = String(r.detail || '').replace(/\|/g, '\\|');
-    return `| \`${r.name}\`${marker} | ${expected} | ${actual} | ${detail} | ${r.duration_ms} |`;
-  });
-  return `${header}\n${lines.join('\n')}\n\n_${summary}_`;
+  const isGrid =
+    parsed.lab === 'three-tier-segmentation' ||
+    rows.some((r) => r && r.source && r.source !== 'probe' && r.destination);
+  if (isGrid) {
+    const grid = probeGridMatrix(rows, parsed.matched_expectation);
+    if (grid) return grid;
+  }
+  return probeListMatrix(rows, parsed.matched_expectation);
 }
 
 module.exports = async ({github, context}) => {
@@ -78,8 +152,21 @@ module.exports = async ({github, context}) => {
   const ttlIso = envOr('TTL_ISO');
   const notes = envOr('NOTES');
   const instanceId = envOr('INSTANCE_ID');
+  const instanceIdsJson = envOr('INSTANCE_IDS_JSON');
   const vpcId = envOr('VPC_ID');
   const region = envOr('REGION');
+
+  let tierInstances = null;
+  if (instanceIdsJson) {
+    try {
+      const parsed = JSON.parse(instanceIdsJson);
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        tierInstances = parsed;
+      }
+    } catch (err) {
+      // fall through; tierInstances stays null
+    }
+  }
   const probeLogGroup = envOr('PROBE_LOG_GROUP');
   const flowLogGroup = envOr('FLOW_LOG_GROUP');
   const probeJson = envOr('PROBE_JSON');
@@ -87,8 +174,15 @@ module.exports = async ({github, context}) => {
 
   const isTeardown = status === 'destroyed' || status === 'destroy-failed';
 
-  const startSession = instanceId
-    ? `\`\`\`bash\naws ssm start-session --region ${region} --target ${instanceId}\n\`\`\``
+  const sessionCommands = tierInstances
+    ? Object.entries(tierInstances)
+        .map(([tier, id]) => `# ${tier}\naws ssm start-session --region ${region} --target ${id}`)
+        .join('\n')
+    : instanceId
+      ? `aws ssm start-session --region ${region} --target ${instanceId}`
+      : null;
+  const startSession = sessionCommands
+    ? `\`\`\`bash\n${sessionCommands}\n\`\`\``
     : '_instance not provisioned_';
 
   const logGroupLink = (name) => {
@@ -123,7 +217,9 @@ module.exports = async ({github, context}) => {
     `| ttl | \`${ttl}\` — ${ttlCountdown(ttlIso)} |`,
     `| region | \`${region}\` |`,
     `| vpc | \`${vpcId || '—'}\` |`,
-    `| instance | \`${instanceId || '—'}\` |`,
+    tierInstances
+      ? `| instances | ${Object.entries(tierInstances).map(([t, i]) => `\`${t}=${i}\``).join(', ')} |`
+      : `| instance | \`${instanceId || '—'}\` |`,
     notes ? `| notes | ${notes} |` : null,
     '',
     '#### SSM session',
