@@ -4,9 +4,13 @@
 # lab-provision workflow validates it against .platform/manifest.schema.json
 # before any AWS call.
 #
-# v1 enums (slices 8 and 11 expand these):
-#   lab:      layered-reachability
-#   scenario: happy-path
+# Enums:
+#   lab:      layered-reachability (slice 11 adds three-tier-segmentation)
+#   scenario: happy-path | nacl-deny-egress | missing-vpc-endpoint | dns-disabled
+#
+# Each fault scenario breaks one layer; the probe matrix reports
+# expected-vs-actual so a "failed" probe is the success criterion. See
+# labs/README.md for the per-scenario lesson.
 
 lab: layered-reachability
 scenario: happy-path
