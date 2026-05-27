@@ -25,12 +25,17 @@ output "region" {
 
 output "vpc_id" {
   description = "Lab VPC ID."
-  value       = module.lab.vpc_id
+  value       = local.vpc_id
 }
 
 output "instance_id" {
-  description = "EC2 instance ID. Use with: aws ssm start-session --target <id>"
-  value       = module.lab.instance_id
+  description = "EC2 instance ID for labs with a single instance. Use with: aws ssm start-session --target <id>. Empty for three-tier-segmentation."
+  value       = local.target_instance_id
+}
+
+output "instance_ids" {
+  description = "Map of tier -> instance ID for the three-tier-segmentation lab. Empty for layered-reachability."
+  value       = local.three_tier_active ? module.lab_three_tier[0].instance_ids : {}
 }
 
 output "probe_function_name" {
@@ -45,5 +50,5 @@ output "probe_log_group" {
 
 output "flow_log_group" {
   description = "CloudWatch log group for VPC Flow Logs."
-  value       = module.lab.flow_log_group_name
+  value       = local.flow_log_group_name
 }

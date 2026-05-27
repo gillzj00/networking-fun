@@ -21,22 +21,27 @@ variable "pr_number" {
 }
 
 variable "lab" {
-  description = "Lab to provision. Must match the manifest enum (v1: layered-reachability)."
+  description = "Lab to provision. Must match the manifest enum."
   type        = string
 
   validation {
-    condition     = contains(["layered-reachability"], var.lab)
-    error_message = "lab must be one of: layered-reachability."
+    condition     = contains(["layered-reachability", "three-tier-segmentation"], var.lab)
+    error_message = "lab must be one of: layered-reachability, three-tier-segmentation."
   }
 }
 
 variable "scenario" {
-  description = "Fault scenario. v1: happy-path."
+  description = "Fault scenario for the chosen lab. The manifest validator enforces the per-lab whitelist before Terraform runs; this variable validation guards against direct apply with an unsupported value."
   type        = string
 
   validation {
-    condition     = contains(["happy-path"], var.scenario)
-    error_message = "scenario must be one of: happy-path."
+    condition = contains([
+      "happy-path",
+      "cidr-instead-of-sg",
+      "nacl-stateless-return",
+      "missing-chain-link",
+    ], var.scenario)
+    error_message = "scenario must be one of: happy-path, cidr-instead-of-sg, nacl-stateless-return, missing-chain-link."
   }
 }
 

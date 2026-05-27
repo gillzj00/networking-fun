@@ -2,11 +2,22 @@
 #
 # Copy this to .platform/manifest.yaml on your PR branch and edit. The
 # lab-provision workflow validates it against .platform/manifest.schema.json
-# before any AWS call.
+# (and the per-lab scenario whitelist in
+# .github/scripts/validate-manifest.py) before any AWS call.
 #
-# v1 enums (slices 8 and 11 expand these):
-#   lab:      layered-reachability
-#   scenario: happy-path
+# Enums:
+#   lab:
+#     layered-reachability    # Lab #1
+#     three-tier-segmentation # Lab #2
+#
+#   scenario (per-lab whitelist enforced by the validator):
+#     layered-reachability:
+#       happy-path
+#     three-tier-segmentation:
+#       happy-path
+#       cidr-instead-of-sg
+#       nacl-stateless-return
+#       missing-chain-link
 
 lab: layered-reachability
 scenario: happy-path

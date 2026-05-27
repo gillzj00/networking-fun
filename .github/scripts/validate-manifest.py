@@ -33,6 +33,19 @@ TTL_DEFAULT = "4h"
 TTL_UNITS = {"s": 1, "m": 60, "h": 3600}
 TTL_RE = re.compile(r"^([1-9][0-9]*)(s|m|h)$")
 
+# Per-lab scenario whitelist. The schema's `scenario` enum is the union;
+# this narrows it so e.g. `lab: layered-reachability, scenario: nacl-stateless-return`
+# is rejected before Terraform runs.
+SCENARIOS_BY_LAB = {
+    "layered-reachability": {"happy-path"},
+    "three-tier-segmentation": {
+        "happy-path",
+        "cidr-instead-of-sg",
+        "nacl-stateless-return",
+        "missing-chain-link",
+    },
+}
+
 
 def parse_ttl(value: str) -> int:
     match = TTL_RE.match(value)
@@ -107,6 +120,19 @@ def main() -> None:
             location = "/".join(str(p) for p in err.path) or "<root>"
             print(f"  - {location}: {err.message}", file=sys.stderr)
         fail(f"{len(errors)} schema violation(s)")
+
+    lab = raw["lab"]
+    scenario = raw["scenario"]
+    allowed = SCENARIOS_BY_LAB.get(lab)
+    if allowed is None:
+        # Caught by the schema enum; defensive guard against drift.
+        fail(f"unknown lab {lab!r} (schema and validator are out of sync)")
+    if scenario not in allowed:
+        sorted_allowed = ", ".join(sorted(allowed))
+        fail(
+            f"scenario {scenario!r} is not valid for lab {lab!r}; "
+            f"allowed scenarios for this lab: {sorted_allowed}"
+        )
 
     ttl = raw.get("ttl", TTL_DEFAULT)
     try:
