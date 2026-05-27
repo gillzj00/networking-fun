@@ -26,6 +26,7 @@ env:
   GO_VERSION: '1.22'
   PYTHON_VERSION: '3.12'
   TERRAFORM_VERSION: '1.10.5'
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
   changes:
@@ -113,6 +114,17 @@ jobs:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
 
+      - name: prime terraform plugin cache dir
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+      - name: cache terraform providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: tf-plugins-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-${{ hashFiles('tests/vpc/fixtures/.terraform.lock.hcl') }}
+          restore-keys: |
+            tf-plugins-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
@@ -126,75 +138,110 @@ jobs:
           AWS_REGION: ${{ vars.AWS_REGION }}
         run: go test ./vpc/... -v -timeout 25m
 
-  lab1:
-    name: Lab #1 end-to-end (happy + nacl-deny-egress)
+  scenario:
+    name: ${{ matrix.scenario }}
     needs: changes
-    if: needs.changes.outputs.lab1 == 'true' && (github.event_name != 'pull_request' || github.actor == 'gillzj00')
+    if: github.event_name != 'pull_request' || github.actor == 'gillzj00'
     runs-on: ubuntu-latest
     environment: lab
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: lab1-happy-path
+            lab: lab1
+            package: ./lab1/...
+            test: TestLab1HappyPath
+            lock: tests/lab1/fixtures/.terraform.lock.hcl
+          - scenario: lab1-nacl-deny-egress
+            lab: lab1
+            package: ./lab1/...
+            test: TestLab1NaclDenyEgress
+            lock: tests/lab1/fixtures/.terraform.lock.hcl
+          - scenario: lab1-missing-vpc-endpoint
+            lab: lab1
+            package: ./lab1/...
+            test: TestLab1MissingVpcEndpoint
+            lock: tests/lab1/fixtures/.terraform.lock.hcl
+          - scenario: lab1-dns-disabled
+            lab: lab1
+            package: ./lab1/...
+            test: TestLab1DnsDisabled
+            lock: tests/lab1/fixtures/.terraform.lock.hcl
+          - scenario: lab2-happy-path
+            lab: lab2
+            package: ./lab2/...
+            test: TestLab2HappyPath
+            lock: tests/lab2/fixtures/.terraform.lock.hcl
+          - scenario: lab2-nacl-stateless-return
+            lab: lab2
+            package: ./lab2/...
+            test: TestLab2NaclStatelessReturn
+            lock: tests/lab2/fixtures/.terraform.lock.hcl
     steps:
+      - name: decide whether this scenario should run
+        id: gate
+        # Matrix context isn't available in job-level `if:`, so the per-lab
+        # path filter has to gate at the step level. When the relevant lab
+        # didn't change, every later step is skipped — the job still shows
+        # up as its own check, conclusion=success, matching the
+        # "skip == pass for required check" acceptance criterion.
+        run: |
+          case "${{ matrix.lab }}" in
+            lab1) needed='${{ needs.changes.outputs.lab1 }}' ;;
+            lab2) needed='${{ needs.changes.outputs.lab2 }}' ;;
+            *)    needed='false' ;;
+          esac
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+          echo "scenario ${{ matrix.scenario }} needed=$needed"
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.needed == 'true'
 
       - uses: actions/setup-go@v5
+        if: steps.gate.outputs.needed == 'true'
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: tests/go.sum
 
       - uses: hashicorp/setup-terraform@v3
+        if: steps.gate.outputs.needed == 'true'
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
 
+      - name: prime terraform plugin cache dir
+        if: steps.gate.outputs.needed == 'true'
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+      - name: cache terraform providers
+        if: steps.gate.outputs.needed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: tf-plugins-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-${{ hashFiles(matrix.lock) }}
+          restore-keys: |
+            tf-plugins-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-
+
       - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.gate.outputs.needed == 'true'
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: gha-terratest-lab1-${{ github.run_id }}
+          role-session-name: gha-terratest-${{ matrix.scenario }}-${{ github.run_id }}
 
       - name: go test
+        if: steps.gate.outputs.needed == 'true'
         working-directory: tests
         env:
           TERRATEST_STATE_BUCKET: ${{ vars.TFSTATE_BUCKET }}
           AWS_REGION: ${{ vars.AWS_REGION }}
-        run: go test ./lab1/... -v -timeout 30m -parallel 2
-
-  lab2:
-    name: Lab #2 end-to-end (happy + nacl-stateless-return)
-    needs: changes
-    if: needs.changes.outputs.lab2 == 'true' && (github.event_name != 'pull_request' || github.actor == 'gillzj00')
-    runs-on: ubuntu-latest
-    environment: lab
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: tests/go.sum
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: gha-terratest-lab2-${{ github.run_id }}
-
-      - name: go test
-        working-directory: tests
-        env:
-          TERRATEST_STATE_BUCKET: ${{ vars.TFSTATE_BUCKET }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-        run: go test ./lab2/... -v -timeout 30m -parallel 2
+        run: go test ${{ matrix.package }} -v -timeout 30m -run '^${{ matrix.test }}$'
 
   summary:
     name: PR comment summary
-    needs: [changes, janitor, vpc, lab1, lab2]
+    needs: [changes, janitor, vpc, scenario]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -206,33 +253,69 @@ jobs:
           LAB2_NEEDED: ${{ needs.changes.outputs.lab2 }}
           JANITOR_RESULT: ${{ needs.janitor.result }}
           VPC_RESULT: ${{ needs.vpc.result }}
-          LAB1_RESULT: ${{ needs.lab1.result }}
-          LAB2_RESULT: ${{ needs.lab2.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
-            const marker = '<!-- terratest-summary:v1 -->';
+            const marker = '<!-- terratest-summary:v2 -->';
+            // GitHub does not expose per-matrix-entry results via needs.*, so
+            // the summary fetches the run's jobs from the API and maps each
+            // matrix entry's job name back to its conclusion.
+            const SCENARIOS = [
+              { key: 'lab1-happy-path',           lab: 'lab1' },
+              { key: 'lab1-nacl-deny-egress',     lab: 'lab1' },
+              { key: 'lab1-missing-vpc-endpoint', lab: 'lab1' },
+              { key: 'lab1-dns-disabled',         lab: 'lab1' },
+              { key: 'lab2-happy-path',           lab: 'lab2' },
+              { key: 'lab2-nacl-stateless-return',lab: 'lab2' },
+            ];
+            const labNeeded = {
+              lab1: process.env.LAB1_NEEDED === 'true',
+              lab2: process.env.LAB2_NEEDED === 'true',
+            };
+
+            const { owner, repo } = context.repo;
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner, repo, run_id: context.runId,
+            });
+            const jobByName = new Map(jobs.map(j => [j.name, j]));
+            // The scenario job sets `name: <matrix.scenario>`, so the
+            // GitHub-reported job name is the scenario key verbatim.
+            const conclusionFor = (key) => {
+              const j = jobByName.get(key);
+              if (!j) return 'unknown';
+              // Skipped via job-level `if:` shows as conclusion=skipped.
+              return j.conclusion || j.status || 'unknown';
+            };
+
+            const fmtConclusion = (c) => {
+              if (c === 'success') return 'pass';
+              if (c === 'skipped') return 'skipped';
+              return `**${c}**`;
+            };
+            const renderScenario = (s) => {
+              if (!labNeeded[s.lab]) return 'skipped (no matching paths)';
+              return fmtConclusion(conclusionFor(s.key));
+            };
             const fmt = (needed, result) => {
               if (needed !== 'true') return 'skipped (no matching paths)';
-              if (result === 'success') return 'pass';
-              if (result === 'skipped') return 'skipped';
-              return `**${result}**`;
+              return fmtConclusion(result);
             };
+            const rows = [
+              `| janitor unit | ${fmt(process.env.JANITOR_NEEDED, process.env.JANITOR_RESULT)} |`,
+              `| vpc integration | ${fmt(process.env.VPC_NEEDED, process.env.VPC_RESULT)} |`,
+              ...SCENARIOS.map(s => `| ${s.key} | ${renderScenario(s)} |`),
+            ];
             const body = [
               marker,
               '## Terratest summary',
               '',
               `| Test | Status |`,
               `| --- | --- |`,
-              `| janitor unit | ${fmt(process.env.JANITOR_NEEDED, process.env.JANITOR_RESULT)} |`,
-              `| vpc integration | ${fmt(process.env.VPC_NEEDED, process.env.VPC_RESULT)} |`,
-              `| lab #1 end-to-end | ${fmt(process.env.LAB1_NEEDED, process.env.LAB1_RESULT)} |`,
-              `| lab #2 end-to-end | ${fmt(process.env.LAB2_NEEDED, process.env.LAB2_RESULT)} |`,
+              ...rows,
               '',
               `[run details](${process.env.RUN_URL})`,
             ].join('\n');
 
-            const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const existing = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number,
