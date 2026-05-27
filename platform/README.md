@@ -55,7 +55,10 @@ The `Workload` tag must be **activated as a cost-allocation tag** in the
 Billing console before the Terratest budget can read non-zero spend. This
 is a one-time manual step in the management account
 (`Billing → Cost allocation tags → User-defined → Workload → Activate`).
-It can wait until slice 9 actually starts emitting the tag.
+
+Slice 9 ([`tests/`](../tests/README.md)) is now wired to emit
+`Workload=terratest` on every resource its harness provisions, so the
+budget will see real spend once the tag is activated.
 
 ## Trigger model
 
