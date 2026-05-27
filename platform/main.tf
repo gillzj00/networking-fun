@@ -11,6 +11,8 @@ terraform {
 # terraform plan comment and that merges to main run terraform apply. It can
 # be replaced or removed once real platform resources (janitor Lambda, ACM,
 # Route53 zone, Budgets) land in later slices.
+#
+# Verified end-to-end on the GitOps loop's first PR (see platform/README.md).
 resource "aws_cloudwatch_log_group" "platform_demo" {
   #checkov:skip=CKV_AWS_158:Demo placeholder; no KMS key warranted for 1-day-retention loop-proof.
   #checkov:skip=CKV_AWS_338:1-day retention is intentional for this disposable demo log group.
