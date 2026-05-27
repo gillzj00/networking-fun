@@ -344,9 +344,15 @@ def _run_three_tier_segmentation() -> list[dict]:
                 continue
 
             # `nc -zv -w 5` reports exit 0 on a successful TCP connect.
-            # We pipe through `bash -c` so the redirect captures stderr
-            # for the SSM output.
-            command = f"nc -zv -w 5 {dst_ip} {int(dst_port)} >/tmp/nc.out 2>&1; echo exit=$?; cat /tmp/nc.out"
+            # Capture nc's exit code BEFORE running anything else, then
+            # surface the output for diagnostics, then exit with the
+            # captured code so SSM RunCommand reflects the actual TCP
+            # result (otherwise the trailing `cat` masks nc's status and
+            # every probe reports success).
+            command = (
+                f"nc -zv -w 5 {dst_ip} {int(dst_port)} >/tmp/nc.out 2>&1; "
+                f"rc=$?; echo exit=$rc; cat /tmp/nc.out; exit $rc"
+            )
             passed, detail = _ssm_run(source_instance, command, timeout_s=30)
             results.append(
                 {
