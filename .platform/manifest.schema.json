@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/gillzj00/networking-fun/.platform/manifest.schema.json",
+  "title": "networking-fun lab manifest",
+  "description": "Schema for .platform/manifest.yaml. Validates the lab/scenario/ttl/notes declared by a PR. v1 accepts only the layered-reachability lab and the happy-path scenario; slices 8 and 11 expand the enums.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["lab", "scenario"],
+  "properties": {
+    "lab": {
+      "type": "string",
+      "enum": ["layered-reachability"],
+      "description": "Lab to provision. v1: layered-reachability only."
+    },
+    "scenario": {
+      "type": "string",
+      "enum": ["happy-path"],
+      "description": "Fault scenario for the chosen lab. v1: happy-path only."
+    },
+    "ttl": {
+      "type": "string",
+      "pattern": "^([1-9][0-9]*)(s|m|h)$",
+      "description": "Time-to-live duration (e.g. 30m, 2h). Capped at 4h by the validator; default 4h.",
+      "default": "4h"
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Free-text note rendered in the PR comment."
+    }
+  }
+}
