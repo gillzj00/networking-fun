@@ -32,25 +32,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: ./.github/actions/tf-setup
         with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
-
-      - name: prime terraform plugin cache dir
-        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
-
-      - name: cache terraform providers
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
-          key: tf-plugins-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-${{ hashFiles('platform/.terraform.lock.hcl') }}
-          restore-keys: |
-            tf-plugins-${{ runner.os }}-${{ env.TERRAFORM_VERSION }}-
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          terraform-version: ${{ env.TERRAFORM_VERSION }}
+          cache-providers: 'true'
+          tf-lock-file: platform/.terraform.lock.hcl
+          aws-role-arn: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-session-name: gha-platform-drift-${{ github.run_id }}
 

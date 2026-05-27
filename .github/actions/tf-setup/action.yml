@@ -1,0 +1,80 @@
+name: tf-setup
+description: >
+  Shared setup for Terraform jobs: checkout, setup-terraform, optional Go,
+  optional AWS OIDC credentials, and optional Terraform plugin cache.
+
+inputs:
+  terraform-version:
+    description: Terraform version to install.
+    required: false
+    default: '1.10.5'
+  setup-go:
+    description: When 'true', install Go via actions/setup-go.
+    required: false
+    default: 'false'
+  go-version:
+    description: Go version to install when setup-go is true.
+    required: false
+    default: '1.22'
+  go-cache-dependency-path:
+    description: Path to go.sum for the Go module cache key.
+    required: false
+    default: ''
+  aws-role-arn:
+    description: IAM role ARN to assume via OIDC. Leave empty to skip AWS auth.
+    required: false
+    default: ''
+  aws-region:
+    description: AWS region for the assumed role session.
+    required: false
+    default: ''
+  role-session-name:
+    description: Session name for the assumed role.
+    required: false
+    default: ''
+  cache-providers:
+    description: When 'true', set up actions/cache for TF_PLUGIN_CACHE_DIR.
+    required: false
+    default: 'false'
+  tf-lock-file:
+    description: Path to .terraform.lock.hcl used to compute the cache key.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    # Note: this composite action is referenced via local path, so callers
+    # must run actions/checkout@v4 before invoking it. Checkout is kept out
+    # of the composite to avoid a redundant second clone in every job.
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+        terraform_wrapper: false
+
+    - uses: actions/setup-go@v5
+      if: inputs.setup-go == 'true'
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache-dependency-path: ${{ inputs.go-cache-dependency-path }}
+
+    - name: prime terraform plugin cache dir
+      if: inputs.cache-providers == 'true'
+      shell: bash
+      run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+    - name: cache terraform providers
+      if: inputs.cache-providers == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+        key: tf-plugins-${{ runner.os }}-${{ inputs.terraform-version }}-${{ hashFiles(inputs.tf-lock-file) }}
+        restore-keys: |
+          tf-plugins-${{ runner.os }}-${{ inputs.terraform-version }}-
+
+    - uses: aws-actions/configure-aws-credentials@v4
+      if: inputs.aws-role-arn != ''
+      with:
+        role-to-assume: ${{ inputs.aws-role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+        role-session-name: ${{ inputs.role-session-name }}
