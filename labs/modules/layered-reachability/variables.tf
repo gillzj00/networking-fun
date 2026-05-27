@@ -19,13 +19,18 @@ variable "ttl_iso" {
 }
 
 variable "scenario" {
-  description = "Fault scenario name. v1 supports only happy-path; slice 8 expands the enum."
+  description = "Fault scenario name. happy-path is the baseline; the other three deliberately break one layer (NACL, endpoint, DNS) so the probe can demonstrate the failure mode."
   type        = string
   default     = "happy-path"
 
   validation {
-    condition     = contains(["happy-path"], var.scenario)
-    error_message = "scenario must be one of: happy-path."
+    condition = contains([
+      "happy-path",
+      "nacl-deny-egress",
+      "missing-vpc-endpoint",
+      "dns-disabled",
+    ], var.scenario)
+    error_message = "scenario must be one of: happy-path, nacl-deny-egress, missing-vpc-endpoint, dns-disabled."
   }
 }
 
