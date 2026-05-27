@@ -2,15 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/gillzj00/networking-fun/.platform/manifest.schema.json",
   "title": "networking-fun lab manifest",
-  "description": "Schema for .platform/manifest.yaml. Validates the lab/scenario/ttl/notes declared by a PR. Slice 8 expands the scenario enum with three fault scenarios for layered-reachability; slice 11 adds the three-tier-segmentation lab.",
+  "description": "Schema for .platform/manifest.yaml. Validates the lab/scenario/ttl/notes declared by a PR. The per-lab scenario whitelist (e.g. nacl-stateless-return is only valid for three-tier-segmentation, nacl-deny-egress is only valid for layered-reachability) is enforced by .github/scripts/validate-manifest.py, not by this schema's enums, because JSON Schema's `oneOf` over conditional enums is awkward to read; the union is captured here and the script narrows it.",
   "type": "object",
   "additionalProperties": false,
   "required": ["lab", "scenario"],
   "properties": {
     "lab": {
       "type": "string",
-      "enum": ["layered-reachability"],
-      "description": "Lab to provision. v1: layered-reachability only."
+      "enum": ["layered-reachability", "three-tier-segmentation"],
+      "description": "Lab to provision."
     },
     "scenario": {
       "type": "string",
@@ -18,9 +18,12 @@
         "happy-path",
         "nacl-deny-egress",
         "missing-vpc-endpoint",
-        "dns-disabled"
+        "dns-disabled",
+        "cidr-instead-of-sg",
+        "nacl-stateless-return",
+        "missing-chain-link"
       ],
-      "description": "Fault scenario for the chosen lab. happy-path is the baseline; the three fault scenarios each break one layer (NACL, endpoint, DNS) and the probe matrix flags expected-vs-actual."
+      "description": "Scenario for the chosen lab. Each lab accepts a subset of these (enforced by the validator script)."
     },
     "ttl": {
       "type": "string",
