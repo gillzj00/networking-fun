@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/gillzj00/networking-fun/.platform/manifest.schema.json",
   "title": "networking-fun lab manifest",
-  "description": "Schema for .platform/manifest.yaml. Validates the lab/scenario/ttl/notes declared by a PR. v1 accepts only the layered-reachability lab and the happy-path scenario; slices 8 and 11 expand the enums.",
+  "description": "Schema for .platform/manifest.yaml. Validates the lab/scenario/ttl/notes declared by a PR. Slice 8 expands the scenario enum with three fault scenarios for layered-reachability; slice 11 adds the three-tier-segmentation lab.",
   "type": "object",
   "additionalProperties": false,
   "required": ["lab", "scenario"],
@@ -14,8 +14,13 @@
     },
     "scenario": {
       "type": "string",
-      "enum": ["happy-path"],
-      "description": "Fault scenario for the chosen lab. v1: happy-path only."
+      "enum": [
+        "happy-path",
+        "nacl-deny-egress",
+        "missing-vpc-endpoint",
+        "dns-disabled"
+      ],
+      "description": "Fault scenario for the chosen lab. happy-path is the baseline; the three fault scenarios each break one layer (NACL, endpoint, DNS) and the probe matrix flags expected-vs-actual."
     },
     "ttl": {
       "type": "string",

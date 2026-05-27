@@ -31,12 +31,17 @@ variable "lab" {
 }
 
 variable "scenario" {
-  description = "Fault scenario. v1: happy-path."
+  description = "Fault scenario. happy-path baseline plus three fault scenarios (nacl-deny-egress, missing-vpc-endpoint, dns-disabled) for layered-reachability."
   type        = string
 
   validation {
-    condition     = contains(["happy-path"], var.scenario)
-    error_message = "scenario must be one of: happy-path."
+    condition = contains([
+      "happy-path",
+      "nacl-deny-egress",
+      "missing-vpc-endpoint",
+      "dns-disabled",
+    ], var.scenario)
+    error_message = "scenario must be one of: happy-path, nacl-deny-egress, missing-vpc-endpoint, dns-disabled."
   }
 }
 
