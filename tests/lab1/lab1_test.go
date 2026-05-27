@@ -87,6 +87,53 @@ func TestLab1NaclDenyEgress(t *testing.T) {
 	assert.False(t, results.AllPassed, "fault scenario should not have all_passed=true")
 }
 
+func TestLab1MissingVpcEndpoint(t *testing.T) {
+	t.Parallel()
+
+	results := provisionAndProbe(t, "missing-vpc-endpoint")
+
+	// missing-vpc-endpoint: the ssm interface endpoint is absent, so the
+	// resolver still answers (DNS is on, ssm.<region>.amazonaws.com falls
+	// back to the public address), but TCP/443 to a non-VPC destination
+	// has no route. SSM API and registration both fail.
+	byName := map[string]probeResult{}
+	for _, r := range results.Results {
+		byName[r.Name] = r
+	}
+
+	require.Len(t, byName, 4, "expected 4 probes")
+	assertProbe(t, byName, "dns_ssm_endpoint", true)
+	assertProbe(t, byName, "dns_public_hostname", true)
+	assertProbe(t, byName, "ssm_api_reachable", false)
+	assertProbe(t, byName, "instance_registered_with_ssm", false)
+
+	assert.True(t, results.MatchedExpectation, "fault scenario must match expectation matrix")
+	assert.False(t, results.AllPassed, "fault scenario should not have all_passed=true")
+}
+
+func TestLab1DnsDisabled(t *testing.T) {
+	t.Parallel()
+
+	results := provisionAndProbe(t, "dns-disabled")
+
+	// dns-disabled: VPC DNS support is off. The Amazon-provided resolver
+	// returns nothing, so every probe that has to resolve a hostname
+	// fails — endpoint lookup, public hostname, SSM API, registration.
+	byName := map[string]probeResult{}
+	for _, r := range results.Results {
+		byName[r.Name] = r
+	}
+
+	require.Len(t, byName, 4, "expected 4 probes")
+	assertProbe(t, byName, "dns_ssm_endpoint", false)
+	assertProbe(t, byName, "dns_public_hostname", false)
+	assertProbe(t, byName, "ssm_api_reachable", false)
+	assertProbe(t, byName, "instance_registered_with_ssm", false)
+
+	assert.True(t, results.MatchedExpectation, "fault scenario must match expectation matrix")
+	assert.False(t, results.AllPassed, "fault scenario should not have all_passed=true")
+}
+
 // provisionAndProbe is the common lifecycle for every lab1 test: apply
 // the fixture for the given scenario, invoke the probe, return the
 // parsed summary. Destroy is deferred regardless of outcome.
