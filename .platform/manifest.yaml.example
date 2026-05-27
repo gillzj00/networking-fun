@@ -1,0 +1,14 @@
+# networking-fun lab manifest
+#
+# Copy this to .platform/manifest.yaml on your PR branch and edit. The
+# lab-provision workflow validates it against .platform/manifest.schema.json
+# before any AWS call.
+#
+# v1 enums (slices 8 and 11 expand these):
+#   lab:      layered-reachability
+#   scenario: happy-path
+
+lab: layered-reachability
+scenario: happy-path
+ttl: 2h
+notes: "Smoke test for Lab #1 happy path"
