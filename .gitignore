@@ -62,3 +62,33 @@ terraform.rc
 # Optional: ignore plan files saved before destroying Terraform configuration
 # Uncomment the line below if you want to ignore planout files.
 # planout
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# Generic env / secrets files (defensive — none are tracked today)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa
+id_ed25519
+credentials
+.aws/credentials
+
+# Node tooling (defensive — currently no Node code in the repo)
+node_modules/
+dist/
+build/
+.npm/
+
+# Claude Code local state (settings.local.json contains personal allowlist)
+.claude/settings.local.json
