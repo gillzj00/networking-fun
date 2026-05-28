@@ -343,10 +343,24 @@ def _run_three_tier_segmentation() -> list[dict]:
                 )
                 continue
 
-            # `nc -zv -w 5` reports exit 0 on a successful TCP connect.
-            # We pipe through `bash -c` so the redirect captures stderr
-            # for the SSM output.
-            command = f"nc -zv -w 5 {dst_ip} {int(dst_port)} >/tmp/nc.out 2>&1; echo exit=$?; cat /tmp/nc.out"
+            # The probe asks "is the network path open between these
+            # tiers?", not "is a service listening on the destination
+            # port?". The tier instances are bare AL2023 — `nc`/`ncat`
+            # is not in the default image, but `bash` and `timeout` are.
+            # Use bash's built-in `/dev/tcp` to send a SYN, wrapped in
+            # `timeout 5` so a silently-dropped SYN comes back as exit
+            # 124 unambiguously.
+            #
+            # Decision:
+            #   exit 0   -> handshake completed (path open, listener present)
+            #   exit 124 -> timeout (SG/NACL silently dropped SYN -> blocked)
+            #   other    -> RST received (path open, no listener)  -> passed
+            command = (
+                f"timeout 5 bash -c '</dev/tcp/{dst_ip}/{int(dst_port)}' "
+                f">/tmp/tcp.out 2>&1; "
+                f"rc=$?; echo exit=$rc; cat /tmp/tcp.out; "
+                f"if [ $rc -eq 124 ]; then exit 1; else exit 0; fi"
+            )
             passed, detail = _ssm_run(source_instance, command, timeout_s=30)
             results.append(
                 {

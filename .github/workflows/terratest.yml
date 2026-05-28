@@ -56,6 +56,7 @@ jobs:
               - 'tests/helpers/**'
               - 'tests/go.mod'
               - '.github/workflows/terratest.yml'
+              - '!**/*.md'
             lab1:
               - 'labs/modules/layered-reachability/**'
               - 'labs/modules/probe/**'
@@ -63,6 +64,7 @@ jobs:
               - 'tests/helpers/**'
               - 'tests/go.mod'
               - '.github/workflows/terratest.yml'
+              - '!**/*.md'
             lab2:
               - 'labs/modules/three-tier-segmentation/**'
               - 'labs/modules/probe/**'
@@ -70,6 +72,7 @@ jobs:
               - 'tests/helpers/**'
               - 'tests/go.mod'
               - '.github/workflows/terratest.yml'
+              - '!**/*.md'
 
   janitor:
     name: janitor unit test (Python)
@@ -94,11 +97,14 @@ jobs:
 
   vpc:
     name: VPC module integration test (Terratest)
-    needs: changes
-    if: needs.changes.outputs.vpc == 'true' && (github.event_name != 'pull_request' || github.actor == 'gillzj00')
+    # Depend on scenario so the vpc integration test never competes for
+    # the 5-VPC regional cap while the scenario matrix is in flight.
+    # `if: always()` lets vpc run even if scenarios failed/cancelled.
+    needs: [changes, scenario]
+    if: always() && needs.changes.outputs.vpc == 'true' && (github.event_name != 'pull_request' || github.actor == 'gillzj00')
     runs-on: ubuntu-latest
     environment: lab
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -119,7 +125,7 @@ jobs:
         env:
           TERRATEST_STATE_BUCKET: ${{ vars.TFSTATE_BUCKET }}
           AWS_REGION: ${{ vars.AWS_REGION }}
-        run: go test ./vpc/... -v -timeout 25m
+        run: go test ./vpc/... -v -timeout 45m
 
   scenario:
     name: ${{ matrix.scenario }}
@@ -127,9 +133,18 @@ jobs:
     if: github.event_name != 'pull_request' || github.actor == 'gillzj00'
     runs-on: ubuntu-latest
     environment: lab
-    timeout-minutes: 35
+    timeout-minutes: 50
     strategy:
-      fail-fast: false
+      # Fail-fast cancels sibling scenarios on the first failure so we
+      # surface a broken matrix quickly during iteration. The trade-off
+      # is losing parallel diagnostic signal; flip back to false when
+      # mapping a new wave of failures.
+      fail-fast: true
+      # AWS default VPC cap is 5/region. Each scenario creates 1 VPC and
+      # the vpc integration job can run concurrently with another VPC, so
+      # capping parallelism at 2 keeps peak usage under the limit even
+      # with a default VPC and an in-flight cleanup race.
+      max-parallel: 2
       matrix:
         include:
           - scenario: lab1-happy-path
@@ -201,7 +216,11 @@ jobs:
         env:
           TERRATEST_STATE_BUCKET: ${{ vars.TFSTATE_BUCKET }}
           AWS_REGION: ${{ vars.AWS_REGION }}
-        run: go test ${{ matrix.package }} -v -timeout 30m -run '^${{ matrix.test }}$'
+        # Lambda VPC ENIs take 15-25 minutes to release after the Lambda
+        # is deleted, so terraform destroy of the SG and subnet routinely
+        # runs that long; the per-package timeout has to comfortably
+        # exceed apply + probe + destroy.
+        run: go test ${{ matrix.package }} -v -timeout 45m -run '^${{ matrix.test }}$'
 
   summary:
     name: PR comment summary

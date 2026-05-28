@@ -41,9 +41,15 @@ variable "vpc_cidr" {
 }
 
 variable "private_subnet_cidr" {
-  description = "CIDR for the private subnet inside the lab VPC."
+  description = "CIDR for the private compute subnet (instance + probe Lambda)."
   type        = string
   default     = "10.20.0.0/27"
+}
+
+variable "endpoint_subnet_cidr" {
+  description = "CIDR for the SSM endpoint subnet. Kept separate from the compute subnet so the nacl-deny-egress scenario actually exercises the subnet boundary."
+  type        = string
+  default     = "10.20.0.32/27"
 }
 
 variable "instance_type" {

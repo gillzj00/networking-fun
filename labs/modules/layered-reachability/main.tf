@@ -104,6 +104,23 @@ resource "aws_subnet" "private" {
   })
 }
 
+# Separate subnet for the SSM interface endpoint ENIs. NACLs only filter
+# traffic that crosses a subnet boundary, so the nacl-deny-egress scenario
+# would be a no-op if the Lambda and the endpoints shared a subnet —
+# packets between same-subnet ENIs never hit the NACL. Splitting them
+# means Lambda→endpoint really does cross the subnet boundary and the
+# deny-egress rule on the compute subnet can drop it.
+resource "aws_subnet" "endpoints" {
+  vpc_id            = aws_vpc.this.id
+  cidr_block        = var.endpoint_subnet_cidr
+  availability_zone = data.aws_availability_zones.available.names[0]
+
+  tags = merge(local.module_tags, {
+    Name = "${local.name_prefix}-endpoints"
+    Tier = "endpoints"
+  })
+}
+
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.this.id
 
@@ -114,6 +131,11 @@ resource "aws_route_table" "private" {
 
 resource "aws_route_table_association" "private" {
   subnet_id      = aws_subnet.private.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "endpoints" {
+  subnet_id      = aws_subnet.endpoints.id
   route_table_id = aws_route_table.private.id
 }
 
@@ -193,7 +215,7 @@ resource "aws_vpc_endpoint" "ssm_family" {
   vpc_id              = aws_vpc.this.id
   service_name        = "com.amazonaws.${data.aws_region.current.name}.${each.key}"
   vpc_endpoint_type   = "Interface"
-  subnet_ids          = [aws_subnet.private.id]
+  subnet_ids          = [aws_subnet.endpoints.id]
   security_group_ids  = [aws_security_group.endpoints.id]
   private_dns_enabled = local.flags.private_dns
 
