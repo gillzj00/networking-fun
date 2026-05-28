@@ -1,0 +1,28 @@
+# networking-fun lab manifest
+#
+# Copy this to .platform/manifest.yaml on your PR branch and edit. The
+# lab-provision workflow validates it against .platform/manifest.schema.json
+# (and the per-lab scenario whitelist in
+# .github/scripts/validate-manifest.py) before any AWS call.
+#
+# Enums:
+#   lab:
+#     layered-reachability    # Lab #1
+#     three-tier-segmentation # Lab #2
+#
+#   scenario (per-lab whitelist enforced by the validator):
+#     layered-reachability:
+#       happy-path
+#       nacl-deny-egress
+#       missing-vpc-endpoint
+#       dns-disabled
+#     three-tier-segmentation:
+#       happy-path
+#       cidr-instead-of-sg
+#       nacl-stateless-return
+#       missing-chain-link
+
+lab: layered-reachability
+scenario: happy-path
+ttl: 2h
+notes: "Smoke test for Lab #1 happy path"
