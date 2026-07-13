@@ -1,0 +1,4 @@
+lab: hello-fargate
+scenario: happy-path
+ttl: 2h
+notes: "First live run of the container lab loop"
