@@ -34,20 +34,17 @@ TTL_UNITS = {"s": 1, "m": 60, "h": 3600}
 TTL_RE = re.compile(r"^([1-9][0-9]*)(s|m|h)$")
 
 # Per-lab scenario whitelist. The schema's `scenario` enum is the union;
-# this narrows it so e.g. `lab: layered-reachability, scenario: nacl-stateless-return`
-# is rejected before Terraform runs.
+# this narrows it per lab. With a single lab the sets currently coincide,
+# but the split stays so a second lab (EKS is v2) slots in without
+# restructuring.
 SCENARIOS_BY_LAB = {
-    "layered-reachability": {
+    "hello-fargate": {
         "happy-path",
-        "nacl-deny-egress",
-        "missing-vpc-endpoint",
-        "dns-disabled",
-    },
-    "three-tier-segmentation": {
-        "happy-path",
-        "cidr-instead-of-sg",
-        "nacl-stateless-return",
-        "missing-chain-link",
+        "sg-port-mismatch",
+        "broken-task-execution-role",
+        "bad-image-tag",
+        "failing-health-check",
+        "misconfigured-task-definition",
     },
 }
 
