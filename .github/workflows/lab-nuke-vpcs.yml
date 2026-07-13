@@ -1,0 +1,52 @@
+name: lab-nuke-vpcs
+
+# One-shot escape hatch for the case where terratest leaks VPCs faster than
+# the janitor can mop them up and the regional VPC quota blocks new runs.
+# Triggered manually with explicit VPC IDs to keep the blast radius scoped.
+
+on:
+  workflow_dispatch:
+    inputs:
+      vpc_ids:
+        description: 'Space-separated VPC IDs to delete (must be tagged ManagedBy=terratest)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  guard:
+    name: gate to owner
+    runs-on: ubuntu-latest
+    steps:
+      - name: only the repo owner may run this
+        run: |
+          if [[ "${{ github.actor }}" != "gillzj00" ]]; then
+            echo "actor=${{ github.actor }} is not the owner; refusing."
+            exit 1
+          fi
+
+  nuke:
+    name: nuke leftover VPCs
+    needs: guard
+    runs-on: ubuntu-latest
+    environment: lab
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-lab-nuke-vpcs-${{ github.run_id }}
+
+      - name: nuke
+        env:
+          VPC_IDS: ${{ inputs.vpc_ids }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          python3 -m pip install --quiet boto3
+          python3 .github/scripts/nuke_vpcs.py $VPC_IDS
