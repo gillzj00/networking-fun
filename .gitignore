@@ -92,3 +92,4 @@ build/
 
 # Claude Code local state (settings.local.json contains personal allowlist)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
