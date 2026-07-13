@@ -1,7 +1,7 @@
 # networking-fun — Product Requirements Document
 
-**Status:** Draft v1 — **M1 shipped 2026-05-26 (repo public)**
-**Last updated:** 2026-05-26
+**Status:** Draft v1 — **M1 shipped 2026-05-26 (repo public)** — amended by [A1](#amendment-a1-2026-07-13--container-lab-pivot)
+**Last updated:** 2026-07-13
 **Owner:** @gillzj00
 **Target ship (v1):** 2026-07-06 (6 weeks)
 
@@ -239,3 +239,76 @@ Marks reflect actual state after 2026-05-26 flip.
 - **R2.** Terratest costs could exceed budget if test suite is run too aggressively. Mitigation: $5 alarm + path-filtered triggers.
 - **R3.** GitOps-on-platform layer introduces chicken-and-egg complexity. Mitigation: "Why bootstrap is manual" README section turns it into a teaching moment.
 - **R4.** 6-week timeline assumes ~10–15 hrs/week; competing demands (job search, current role) could slip M3. Mitigation: M2 is the "resume-able" milestone, not M3.
+
+---
+
+## Amendment A1 (2026-07-13) — container lab pivot
+
+### Trigger
+
+M2/M3 shipped ~90% of v1 (both labs, IDP loop, Terratest matrix). Then the
+nightly Terratest runs started leaking VPCs: failed destroys accumulated
+against the 5-VPC regional quota (`VpcLimitExceeded`, 9 consecutive failed
+nights) and the leaked SSM interface endpoints carried ~$59/mo. The project
+was paused 2026-06-27 to stop the spend. This amendment is the restart.
+
+### Decision
+
+**The lab payload pivots from ephemeral per-PR VPC labs to container labs on
+ECS Fargate. The IDP chassis is unchanged** — manifest → provision → probe →
+PR comment → TTL destroy, OIDC auth, janitor, budgets, and the three-layer
+architecture all stay. What each PR provisions changes:
+
+| | Before (v1 as written) | After (A1) |
+|---|---|---|
+| Network | Per-PR VPC (quota-bound, leak-prone) | One static free VPC (`lab-network`, 10.40.0.0/24): public subnets, IGW, no NAT |
+| Compute | t4g.nano EC2 + SSM | Fargate tasks on a shared ECS cluster (`networking-fun-labs`) |
+| Probe | Lambda + SSM reachability | HTTP checks against service endpoints |
+| Idle cost | ~$0 but leak-prone | $0 by construction (cluster/task defs free; services idle at 0 tasks) |
+
+Rationale: containers keep all the platform-engineering signal (GitOps,
+ephemeral envs, CI/CD, cost engineering) with no quota walls and nothing
+running between demos, and add Docker-on-AWS breadth. This pulls the v2
+container direction forward with ECS as the stepping stone; EKS remains v2.
+
+### Image pipeline (new)
+
+`apps/hello` (stdlib Go HTTP server, `/` and `/healthz`, response stamped
+with the git SHA it was built from) → `image-build` workflow builds and
+smoke-tests on PR, pushes immutable SHA-tagged images to the
+`networking-fun/hello` ECR repository on merge to main via the existing OIDC
+role. Task definitions pin images by SHA; the ECR lifecycle policy expires
+only untagged images so pinned tags always survive.
+
+### Section amendments
+
+- **§5 non-goal 5 (EKS):** unchanged as a non-goal, but ECS is now in scope
+  as its stepping stone. EKS stays v2 (control plane ~$73/mo forces
+  create-demo-destroy; kind on CI runners is the free k8s-mechanics option).
+- **§5 non-goal 10 (no real workloads):** relaxed — a minimal HTTP app now
+  runs inside labs as the reachability target. Still no business logic.
+- **§9 (lab catalog):** Labs #1 and #2 shipped as specified and remain in
+  the repo as reference material; they are no longer provisioned nightly.
+  The container lab catalog (fault scenarios: SG port mismatch, broken task
+  execution role, bad image tag, failing health check, misconfigured task
+  definition) is defined alongside the manifest re-wiring.
+- **§11 (cost):** unchanged ceilings; idle lab cost is now $0 by
+  construction. A demo task costs ~1.2 cents/hr. No NAT gateways or
+  interface endpoints anywhere in the lab path.
+- **§12 (testing):** `terratest` and `drift-detect` schedules are disabled
+  since the pause; re-enable decision follows the pivot. The leak's root
+  cause (teardown racing endpoint/ENI deletion) is moot once labs stop
+  creating VPCs.
+
+### Status at amendment time
+
+1. PR #61 (merged): ECR repository + `apps/hello` + `image-build` workflow.
+2. PR #62 (merged): static `lab-network` VPC, ECS cluster, `hello` Fargate
+   service idling at zero tasks. Verified end to end with a one-off
+   `run-task`: public HTTP response echoed the pinned SHA.
+3. Next: manifest/scenario re-wiring + HTTP probe rewrite (the PR-driven
+   loop, §7/§8, pointed at Fargate services instead of VPC labs).
+
+DNS note: the `labs.gillzhub.com` parent-zone delegation was removed during
+the June teardown, so vanity URLs and ACM validation stay dormant
+(`enable_acm_validation = false`) until an HTTPS/ALB slice restores them.
