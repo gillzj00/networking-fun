@@ -92,7 +92,7 @@ jobs:
           # We pass the same vars used at apply time; values don't matter for destroy but must satisfy validation.
           terraform destroy -auto-approve -no-color -input=false -lock-timeout=5m -refresh=false \
             -var "pr_number=${{ needs.guard.outputs.pr_number }}" \
-            -var "lab=layered-reachability" \
+            -var "lab=hello-fargate" \
             -var "scenario=happy-path" \
             -var "ttl_iso=2099-01-01T00:00:00Z" \
             -var "region=${{ vars.AWS_REGION }}"

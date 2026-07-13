@@ -8,6 +8,7 @@ on:
       - 'labs/**'
       - '.github/workflows/lab-provision.yml'
       - '.github/scripts/validate-manifest.py'
+      - '.github/scripts/probe-container-lab.py'
       - '.platform/manifest.schema.json'
 
 permissions:
@@ -77,10 +78,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: lab
     outputs:
-      instance_id: ${{ steps.outputs.outputs.instance_id }}
-      instance_ids_json: ${{ steps.outputs.outputs.instance_ids_json }}
-      probe_function_name: ${{ steps.outputs.outputs.probe_function_name }}
-      probe_log_group: ${{ steps.outputs.outputs.probe_log_group }}
+      cluster_name: ${{ steps.outputs.outputs.cluster_name }}
+      service_name: ${{ steps.outputs.outputs.service_name }}
+      task_definition_arn: ${{ steps.outputs.outputs.task_definition_arn }}
+      security_group_id: ${{ steps.outputs.outputs.security_group_id }}
+      app_port: ${{ steps.outputs.outputs.app_port }}
+      container_log_group: ${{ steps.outputs.outputs.container_log_group }}
       flow_log_group: ${{ steps.outputs.outputs.flow_log_group }}
       vpc_id: ${{ steps.outputs.outputs.vpc_id }}
       region: ${{ steps.outputs.outputs.region }}
@@ -117,92 +120,61 @@ jobs:
         run: |
           terraform output -json > tfout.json
           {
-            echo "instance_id=$(jq -r .instance_id.value tfout.json)"
-            echo "instance_ids_json=$(jq -c .instance_ids.value tfout.json)"
-            echo "probe_function_name=$(jq -r .probe_function_name.value tfout.json)"
-            echo "probe_log_group=$(jq -r .probe_log_group.value tfout.json)"
+            echo "cluster_name=$(jq -r .cluster_name.value tfout.json)"
+            echo "service_name=$(jq -r .service_name.value tfout.json)"
+            echo "task_definition_arn=$(jq -r .task_definition_arn.value tfout.json)"
+            echo "security_group_id=$(jq -r .security_group_id.value tfout.json)"
+            echo "app_port=$(jq -r .app_port.value tfout.json)"
+            echo "container_log_group=$(jq -r .container_log_group.value tfout.json)"
             echo "flow_log_group=$(jq -r .flow_log_group.value tfout.json)"
             echo "vpc_id=$(jq -r .vpc_id.value tfout.json)"
             echo "region=$(jq -r .region.value tfout.json)"
           } >> "$GITHUB_OUTPUT"
 
   probe:
-    name: invoke probe
+    name: probe endpoint
     needs: [guard, apply]
     runs-on: ubuntu-latest
     environment: lab
     outputs:
-      probe_json: ${{ steps.invoke.outputs.probe_json }}
+      probe_json: ${{ steps.collect.outputs.probe_json }}
+      endpoint: ${{ steps.collect.outputs.endpoint }}
     steps:
+      - uses: actions/checkout@v4
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-session-name: gha-lab-probe-pr-${{ github.event.pull_request.number }}
 
-      - name: wait for SSM registration
-        id: wait
-        if: needs.guard.outputs.scenario == 'happy-path'
+      - name: run probe
         working-directory: .
-        env:
-          LAB: ${{ needs.guard.outputs.lab }}
-          SINGLE_INSTANCE_ID: ${{ needs.apply.outputs.instance_id }}
-          INSTANCE_IDS_JSON: ${{ needs.apply.outputs.instance_ids_json }}
         run: |
-          set -euo pipefail
-          if [[ "$LAB" == "three-tier-segmentation" ]]; then
-            mapfile -t ids < <(echo "$INSTANCE_IDS_JSON" | jq -r '.[]')
-          else
-            ids=("$SINGLE_INSTANCE_ID")
+          python3 .github/scripts/probe-container-lab.py \
+            --cluster "${{ needs.apply.outputs.cluster_name }}" \
+            --service "${{ needs.apply.outputs.service_name }}" \
+            --scenario "${{ needs.guard.outputs.scenario }}" \
+            --region "${{ needs.apply.outputs.region }}" \
+            --port "${{ needs.apply.outputs.app_port }}" \
+            --out probe.json
+
+      - name: collect probe output
+        id: collect
+        if: always()
+        working-directory: .
+        run: |
+          if [[ ! -f probe.json ]]; then
+            echo "probe.json not written; nothing to collect."
+            exit 0
           fi
-          echo "waiting on ${#ids[@]} instance(s): ${ids[*]}"
-          for id in "${ids[@]}"; do
-            for attempt in $(seq 1 30); do
-              status=$(aws ssm describe-instance-information \
-                --filters "Key=InstanceIds,Values=$id" \
-                --query 'InstanceInformationList[0].PingStatus' \
-                --output text 2>/dev/null || echo "MISSING")
-              echo "id=$id attempt=$attempt status=$status"
-              if [[ "$status" == "Online" ]]; then
-                break
-              fi
-              if [[ "$attempt" == "30" ]]; then
-                echo "instance $id never reached Online" >&2
-                exit 1
-              fi
-              sleep 10
-            done
-          done
-
-      - name: settle non-happy-path scenarios
-        if: needs.guard.outputs.scenario != 'happy-path'
-        working-directory: .
-        run: |
-          # Fault scenarios expect SSM registration to fail. Skip the
-          # long poll loop but give the probe Lambda's VPC ENIs a moment
-          # to attach so the first invocation isn't a cold-start timeout
-          # on top of an expected probe failure.
-          echo "scenario=${{ needs.guard.outputs.scenario }} — skipping SSM wait, sleeping 60s for ENI attachment"
-          sleep 60
-
-      - name: invoke probe
-        id: invoke
-        working-directory: .
-        run: |
-          aws lambda invoke \
-            --function-name "${{ needs.apply.outputs.probe_function_name }}" \
-            --invocation-type RequestResponse \
-            --log-type Tail \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{}' \
-            probe-out.json > probe-meta.json
-          payload=$(cat probe-out.json)
           {
             echo 'probe_json<<PROBE_EOF'
-            echo "$payload"
+            cat probe.json
+            echo
             echo 'PROBE_EOF'
           } >> "$GITHUB_OUTPUT"
-          echo "$payload" | jq .
+          echo "endpoint=$(jq -r '.endpoint // empty' probe.json)" >> "$GITHUB_OUTPUT"
 
   comment:
     name: post PR comment
@@ -222,11 +194,12 @@ jobs:
           TTL: ${{ needs.guard.outputs.ttl }}
           TTL_ISO: ${{ needs.guard.outputs.ttl_iso }}
           NOTES: ${{ needs.guard.outputs.notes }}
-          INSTANCE_ID: ${{ needs.apply.outputs.instance_id }}
-          INSTANCE_IDS_JSON: ${{ needs.apply.outputs.instance_ids_json }}
+          ENDPOINT: ${{ needs.probe.outputs.endpoint }}
+          CLUSTER: ${{ needs.apply.outputs.cluster_name }}
+          SERVICE: ${{ needs.apply.outputs.service_name }}
           VPC_ID: ${{ needs.apply.outputs.vpc_id }}
           REGION: ${{ needs.apply.outputs.region }}
-          PROBE_LOG_GROUP: ${{ needs.apply.outputs.probe_log_group }}
+          CONTAINER_LOG_GROUP: ${{ needs.apply.outputs.container_log_group }}
           FLOW_LOG_GROUP: ${{ needs.apply.outputs.flow_log_group }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
