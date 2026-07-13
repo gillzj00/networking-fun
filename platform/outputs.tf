@@ -48,6 +48,36 @@ output "hello_ecr_repository_url" {
   value       = aws_ecr_repository.hello.repository_url
 }
 
+output "lab_vpc_id" {
+  description = "ID of the static lab VPC."
+  value       = aws_vpc.lab.id
+}
+
+output "lab_public_subnet_ids" {
+  description = "IDs of the lab VPC public subnets."
+  value       = aws_subnet.lab_public[*].id
+}
+
+output "lab_ecs_cluster_name" {
+  description = "Name of the shared ECS cluster for container labs."
+  value       = aws_ecs_cluster.labs.name
+}
+
+output "hello_service_name" {
+  description = "Name of the hello ECS service (idles at zero tasks)."
+  value       = aws_ecs_service.hello.name
+}
+
+output "hello_task_definition_arn" {
+  description = "ARN of the hello task definition; run-task demos and future lab wiring point here."
+  value       = aws_ecs_task_definition.hello.arn
+}
+
+output "hello_security_group_id" {
+  description = "Security group for the hello service tasks (8080 in, 443 out)."
+  value       = aws_security_group.hello.id
+}
+
 output "labs_wildcard_certificate_arn" {
   description = "ARN of the *.labs wildcard ACM cert. Will be in PENDING_VALIDATION until parent-zone NS delegation is in place and enable_acm_validation is set."
   value       = aws_acm_certificate.labs_wildcard.arn

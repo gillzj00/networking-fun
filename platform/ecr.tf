@@ -21,15 +21,20 @@ resource "aws_ecr_repository" "hello" {
 resource "aws_ecr_lifecycle_policy" "hello" {
   repository = aws_ecr_repository.hello.name
 
+  # Tags are immutable git SHAs and the hello task definition pins one, so
+  # tagged images must never be expired by count -- a pinned tag disappearing
+  # breaks run-task and the service. Tagged images are ~10 MB each, so keeping
+  # them all costs pennies; only clean up untagged layers from failed pushes.
   policy = jsonencode({
     rules = [
       {
         rulePriority = 1
-        description  = "Expire all but the 10 most recent images"
+        description  = "Expire untagged images after 14 days"
         selection = {
-          tagStatus   = "any"
-          countType   = "imageCountMoreThan"
-          countNumber = 10
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 14
         }
         action = {
           type = "expire"

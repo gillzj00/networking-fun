@@ -10,9 +10,37 @@ consume but that itself outlives any individual PR. Today this layer owns:
 - A delegated Route53 zone for `labs.gillzhub.com` — vanity URLs for the
   ephemeral lab envs (`pr-<N>.labs.gillzhub.com`).
 - A wildcard ACM cert for `*.labs.gillzhub.com` (us-east-2, DNS-validated).
+- The `networking-fun/hello` ECR repository — SHA-tagged images pushed by
+  the `image-build` workflow on merge to main.
+- The static lab network and ECS cluster for container labs (below).
 
 Future slices add the lab module registry (see
 [PRD §6](../PRD.md#6-architecture--three-layers)).
+
+## Lab network + ECS
+
+The container labs run on one long-lived, free VPC (`lab-network`,
+10.40.0.0/24): two public subnets, an IGW, no NAT gateway. Fargate tasks
+get public IPs so they can pull from ECR over the internet without paying
+for NAT or interface endpoints — this replaces the ephemeral per-PR VPCs
+that kept hitting the 5-VPC regional quota.
+
+On top of it sit the `networking-fun-labs` ECS cluster and a `hello`
+Fargate service running `apps/hello`. Everything here is free at rest: the
+cluster and task definition cost nothing, and the service idles at
+`hello_desired_count = 0`. To demo:
+
+```sh
+aws ecs run-task \
+  --cluster networking-fun-labs \
+  --task-definition hello \
+  --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[<lab_public_subnet_ids>],securityGroups=[<hello_security_group_id>],assignPublicIp=ENABLED}"
+```
+
+then hit `http://<task public IP>:8080/` (the response echoes the git SHA
+the image was built from) and stop the task. A running task costs about a
+cent per hour; `hello_image_tag` pins which image the task definition runs.
 
 ## Janitor Lambda
 

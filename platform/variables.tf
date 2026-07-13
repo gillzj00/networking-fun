@@ -46,6 +46,42 @@ variable "labs_domain" {
   default     = "labs.gillzhub.com"
 }
 
+variable "lab_vpc_cidr" {
+  description = "CIDR for the static lab VPC. Labs modules use 10.20.0.0/24 and 10.30.0.0/24; keep this disjoint."
+  type        = string
+  default     = "10.40.0.0/24"
+}
+
+variable "lab_public_subnet_cidrs" {
+  description = "CIDRs for the lab VPC public subnets, one per AZ starting at the region's first AZ. Must be inside lab_vpc_cidr and disjoint."
+  type        = list(string)
+  default     = ["10.40.0.0/26", "10.40.0.64/26"]
+}
+
+variable "lab_flow_log_retention_days" {
+  description = "Retention for the lab VPC flow log group."
+  type        = number
+  default     = 1
+}
+
+variable "hello_image_tag" {
+  description = "Image tag (git SHA) of apps/hello that the task definition pins. Pushed by the image-build workflow on merge to main."
+  type        = string
+  default     = "89bd2a240cf415643c0cfc0cafd3e04c2f29cd3f"
+}
+
+variable "hello_desired_count" {
+  description = "Steady-state task count for the hello service. Defaults to 0 so idle cost is zero; demos use one-off run-task or bump this via PR."
+  type        = number
+  default     = 0
+}
+
+variable "hello_log_retention_days" {
+  description = "Retention for the hello task log group."
+  type        = number
+  default     = 1
+}
+
 variable "enable_acm_validation" {
   description = "Flip to true after the parent-zone NS delegation for labs_domain has been added (manually) in the management account. Until then the ACM cert is created but cannot be validated."
   type        = bool
