@@ -1,0 +1,63 @@
+name: image-build
+
+on:
+  pull_request:
+    paths:
+      - 'apps/hello/**'
+      - '.github/workflows/image-build.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/hello/**'
+      - '.github/workflows/image-build.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  IMAGE_NAME: networking-fun/hello
+
+jobs:
+  build:
+    name: docker build / smoke test / push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker build
+        run: |
+          docker build \
+            --build-arg VERSION=${{ github.sha }} \
+            --tag "$IMAGE_NAME:${{ github.sha }}" \
+            apps/hello
+
+      - name: smoke test
+        run: |
+          docker run --rm --detach --publish 8080:8080 --name hello "$IMAGE_NAME:${{ github.sha }}"
+          for i in $(seq 1 10); do
+            if curl -fsS http://localhost:8080/healthz; then break; fi
+            if [ "$i" -eq 10 ]; then echo "healthz never came up" >&2; exit 1; fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8080/
+          docker stop hello
+
+      # Push only on merge to main; PR runs stop after the smoke test.
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: github.event_name == 'push'
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-image-push-${{ github.run_id }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        if: github.event_name == 'push'
+        id: ecr
+
+      - name: docker push
+        if: github.event_name == 'push'
+        run: |
+          docker tag "$IMAGE_NAME:${{ github.sha }}" "${{ steps.ecr.outputs.registry }}/$IMAGE_NAME:${{ github.sha }}"
+          docker push "${{ steps.ecr.outputs.registry }}/$IMAGE_NAME:${{ github.sha }}"

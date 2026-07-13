@@ -43,6 +43,11 @@ output "labs_zone_name_servers" {
   value       = aws_route53_zone.labs.name_servers
 }
 
+output "hello_ecr_repository_url" {
+  description = "URL of the ECR repository holding hello lab images (pushed by the image-build workflow)."
+  value       = aws_ecr_repository.hello.repository_url
+}
+
 output "labs_wildcard_certificate_arn" {
   description = "ARN of the *.labs wildcard ACM cert. Will be in PENDING_VALIDATION until parent-zone NS delegation is in place and enable_acm_validation is set."
   value       = aws_acm_certificate.labs_wildcard.arn
