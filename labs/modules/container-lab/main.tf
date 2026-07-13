@@ -50,7 +50,7 @@ locals {
   name_prefix = "lab-pr-${var.pr_number}"
   app_port    = 8080
 
-  image_tag = var.scenario == "bad-image-tag" ? "does-not-exist" : data.aws_ecr_image.hello_latest.image_tags[0]
+  image_tag = var.scenario == "bad-image-tag" ? "does-not-exist" : one(data.aws_ecr_image.hello_latest.image_tags)
   image     = "${data.aws_ecr_repository.hello.repository_url}:${local.image_tag}"
 
   ingress_port = var.scenario == "sg-port-mismatch" ? 80 : local.app_port
@@ -62,7 +62,7 @@ locals {
   # The hello image is built FROM scratch: no shell, no wget. This health
   # check is the classic mistake of assuming a shell exists in the container.
   container_health_check = var.scenario == "failing-health-check" ? {
-    command     = ["CMD-SHELL", "wget -q -O - http://localhost:8080/healthz || exit 1"]
+    command     = ["CMD-SHELL", "wget -q -O - http://localhost:${local.app_port}/healthz || exit 1"]
     interval    = 5
     timeout     = 2
     retries     = 2

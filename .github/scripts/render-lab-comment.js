@@ -15,10 +15,6 @@ function envOr(name, fallback = '') {
   return v === undefined || v === null || v === '' ? fallback : v;
 }
 
-function statusBadge(status) {
-  return `\`${status}\``;
-}
-
 function ttlCountdown(ttlIso) {
   if (!ttlIso) return '—';
   const expires = Date.parse(ttlIso);
@@ -102,7 +98,7 @@ module.exports = async ({github, context}) => {
     COMMENT_HEADER,
     '### lab environment',
     '',
-    `**status:** ${statusBadge(status)}`,
+    `**status:** \`${status}\``,
     '',
     status === 'destroyed'
       ? 'All lab resources for this PR have been destroyed.'
@@ -115,7 +111,7 @@ module.exports = async ({github, context}) => {
     COMMENT_HEADER,
     '### lab environment',
     '',
-    `**status:** ${statusBadge(status)}`,
+    `**status:** \`${status}\``,
     '',
     `| | |`,
     `|---|---|`,

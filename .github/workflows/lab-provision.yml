@@ -80,8 +80,6 @@ jobs:
     outputs:
       cluster_name: ${{ steps.outputs.outputs.cluster_name }}
       service_name: ${{ steps.outputs.outputs.service_name }}
-      task_definition_arn: ${{ steps.outputs.outputs.task_definition_arn }}
-      security_group_id: ${{ steps.outputs.outputs.security_group_id }}
       app_port: ${{ steps.outputs.outputs.app_port }}
       container_log_group: ${{ steps.outputs.outputs.container_log_group }}
       flow_log_group: ${{ steps.outputs.outputs.flow_log_group }}
@@ -122,8 +120,6 @@ jobs:
           {
             echo "cluster_name=$(jq -r .cluster_name.value tfout.json)"
             echo "service_name=$(jq -r .service_name.value tfout.json)"
-            echo "task_definition_arn=$(jq -r .task_definition_arn.value tfout.json)"
-            echo "security_group_id=$(jq -r .security_group_id.value tfout.json)"
             echo "app_port=$(jq -r .app_port.value tfout.json)"
             echo "container_log_group=$(jq -r .container_log_group.value tfout.json)"
             echo "flow_log_group=$(jq -r .flow_log_group.value tfout.json)"
