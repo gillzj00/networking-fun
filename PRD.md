@@ -303,9 +303,9 @@ only untagged images so pinned tags always survive.
 ### Status at amendment time
 
 1. PR #61 (merged): ECR repository + `apps/hello` + `image-build` workflow.
-2. PR #62 (applied and verified pre-merge): static `lab-network` VPC, ECS
-   cluster, `hello` Fargate service idling at zero tasks. Verified end to
-   end with a one-off `run-task`: public HTTP response echoed the pinned SHA.
+2. PR #62 (merged): static `lab-network` VPC, ECS cluster, `hello` Fargate
+   service idling at zero tasks. Verified end to end with a one-off
+   `run-task`: public HTTP response echoed the pinned SHA.
 3. Next: manifest/scenario re-wiring + HTTP probe rewrite (the PR-driven
    loop, §7/§8, pointed at Fargate services instead of VPC labs).
 
