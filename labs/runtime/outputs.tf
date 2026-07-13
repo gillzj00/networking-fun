@@ -24,31 +24,46 @@ output "region" {
 }
 
 output "vpc_id" {
-  description = "Lab VPC ID."
-  value       = local.vpc_id
+  description = "Static lab VPC the service runs in."
+  value       = module.lab.vpc_id
 }
 
-output "instance_id" {
-  description = "EC2 instance ID for labs with a single instance. Use with: aws ssm start-session --target <id>. Empty for three-tier-segmentation."
-  value       = local.target_instance_id
+output "cluster_name" {
+  description = "Shared ECS cluster the lab service runs on."
+  value       = module.lab.cluster_name
 }
 
-output "instance_ids" {
-  description = "Map of tier -> instance ID for the three-tier-segmentation lab. Empty for layered-reachability."
-  value       = local.three_tier_active ? module.lab_three_tier[0].instance_ids : {}
+output "service_name" {
+  description = "Per-PR ECS service name."
+  value       = module.lab.service_name
 }
 
-output "probe_function_name" {
-  description = "Lambda probe function name."
-  value       = module.probe.function_name
+output "task_definition_arn" {
+  description = "Per-PR task definition ARN."
+  value       = module.lab.task_definition_arn
 }
 
-output "probe_log_group" {
-  description = "CloudWatch log group for the probe Lambda."
-  value       = module.probe.log_group_name
+output "security_group_id" {
+  description = "Per-PR security group on the lab task."
+  value       = module.lab.security_group_id
+}
+
+output "image" {
+  description = "Image URI the task definition pins."
+  value       = module.lab.image
+}
+
+output "app_port" {
+  description = "Port the probe targets on the task public IP."
+  value       = module.lab.app_port
+}
+
+output "container_log_group" {
+  description = "Per-PR CloudWatch log group for container logs."
+  value       = module.lab.log_group_name
 }
 
 output "flow_log_group" {
-  description = "CloudWatch log group for VPC Flow Logs."
-  value       = local.flow_log_group_name
+  description = "CloudWatch log group for the static lab VPC's flow logs (owned by platform/)."
+  value       = "/networking-fun/platform/lab-network-flow-logs"
 }

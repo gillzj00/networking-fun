@@ -25,26 +25,25 @@ variable "lab" {
   type        = string
 
   validation {
-    condition     = contains(["layered-reachability", "three-tier-segmentation"], var.lab)
-    error_message = "lab must be one of: layered-reachability, three-tier-segmentation."
+    condition     = contains(["hello-fargate"], var.lab)
+    error_message = "lab must be: hello-fargate."
   }
 }
 
 variable "scenario" {
-  description = "Fault scenario for the chosen lab. The manifest validator enforces the per-lab whitelist before Terraform runs; this variable validation guards against direct apply with an unsupported value."
+  description = "Fault scenario for the chosen lab. The manifest validator enforces the whitelist before Terraform runs; this variable validation guards against direct apply with an unsupported value."
   type        = string
 
   validation {
     condition = contains([
       "happy-path",
-      "nacl-deny-egress",
-      "missing-vpc-endpoint",
-      "dns-disabled",
-      "cidr-instead-of-sg",
-      "nacl-stateless-return",
-      "missing-chain-link",
+      "sg-port-mismatch",
+      "broken-task-execution-role",
+      "bad-image-tag",
+      "failing-health-check",
+      "misconfigured-task-definition",
     ], var.scenario)
-    error_message = "scenario must be one of: happy-path, nacl-deny-egress, missing-vpc-endpoint, dns-disabled, cidr-instead-of-sg, nacl-stateless-return, missing-chain-link."
+    error_message = "scenario must be one of: happy-path, sg-port-mismatch, broken-task-execution-role, bad-image-tag, failing-health-check, misconfigured-task-definition."
   }
 }
 
