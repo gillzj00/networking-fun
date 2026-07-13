@@ -7,22 +7,17 @@
 #
 # Enums:
 #   lab:
-#     layered-reachability    # Lab #1
-#     three-tier-segmentation # Lab #2
+#     hello-fargate   # per-PR Fargate service on the shared lab cluster
 #
-#   scenario (per-lab whitelist enforced by the validator):
-#     layered-reachability:
-#       happy-path
-#       nacl-deny-egress
-#       missing-vpc-endpoint
-#       dns-disabled
-#     three-tier-segmentation:
-#       happy-path
-#       cidr-instead-of-sg
-#       nacl-stateless-return
-#       missing-chain-link
+#   scenario (each injects exactly one fault; see labs/modules/container-lab/README.md):
+#     happy-path
+#     sg-port-mismatch
+#     broken-task-execution-role
+#     bad-image-tag
+#     failing-health-check
+#     misconfigured-task-definition
 
-lab: layered-reachability
+lab: hello-fargate
 scenario: happy-path
 ttl: 2h
-notes: "Smoke test for Lab #1 happy path"
+notes: "Smoke test for the container lab happy path"
