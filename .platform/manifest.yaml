@@ -1,4 +1,4 @@
 lab: hello-fargate
-scenario: happy-path
+scenario: sg-port-mismatch
 ttl: 2h
-notes: "First live run of the container lab loop"
+notes: "Fault scenario: SG admits port 80, app listens on 8080"
